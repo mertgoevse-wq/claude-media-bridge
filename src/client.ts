@@ -1,0 +1,144 @@
+import fs from "node:fs";
+import path from "node:path";
+import { loadConfig, resolveUserPath, slugify } from "./config.js";
+
+export interface GenerateImageOptions {
+  prompt: string;
+  filename?: string;
+  outputDir?: string;
+  aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4";
+}
+
+export interface GeneratedImageResult {
+  filePath: string;
+  fileSizeBytes: number;
+  model: string;
+  aspectRatio: string;
+  revisedPrompt?: string;
+}
+
+export async function generateImage(
+  options: GenerateImageOptions
+): Promise<GeneratedImageResult> {
+  const config = loadConfig();
+  const targetDir = options.outputDir
+    ? resolveUserPath(options.outputDir)
+    : config.defaultOutputDir;
+
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const baseName = options.filename
+    ? options.filename.replace(/\.(jpg|jpeg|png|webp)$/i, "")
+    : `${slugify(options.prompt)}-${Date.now()}`;
+  const filePath = path.join(targetDir, `${baseName}.jpg`);
+
+  const requestBody: Record<string, unknown> = {
+    prompt: options.prompt,
+    model: config.defaultModel,
+  };
+
+  const ratio = options.aspectRatio || "1:1";
+  if (ratio === "16:9") requestBody.size = "1792x1024";
+  else if (ratio === "9:16") requestBody.size = "1024x1792";
+  else requestBody.size = "1024x1024";
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
+
+  try {
+    const res = await fetch(`${config.baseUrl}/v1/images/generations`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "x-api-key": config.apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`OmniRoute returned HTTP ${res.status}: ${errText}`);
+    }
+
+    const json = (await res.json()) as {
+      data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
+    };
+    const item = json.data?.[0];
+
+    if (!item) {
+      throw new Error("No image data returned from generation endpoint.");
+    }
+
+    if (item.b64_json) {
+      const buffer = Buffer.from(item.b64_json, "base64");
+      fs.writeFileSync(filePath, buffer);
+    } else if (item.url) {
+      const dlRes = await fetch(item.url);
+      const buffer = Buffer.from(await dlRes.arrayBuffer());
+      fs.writeFileSync(filePath, buffer);
+    } else {
+      throw new Error("Missing both b64_json and url in image response.");
+    }
+
+    const stat = fs.statSync(filePath);
+    return {
+      filePath,
+      fileSizeBytes: stat.size,
+      model: config.defaultModel,
+      aspectRatio: ratio,
+      revisedPrompt: item.revised_prompt,
+    };
+  } catch (err: unknown) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+export async function probeVideoEndpoint(prompt: string, model?: string) {
+  const config = loadConfig();
+  const videoModel = model || "veo";
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${config.baseUrl}/v1/videos/generations`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt, model: videoModel }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return { status: res.status, ok: res.ok };
+  } catch {
+    return { status: 500, ok: false };
+  }
+}
+
+export async function probeMusicEndpoint(prompt: string, model?: string) {
+  const config = loadConfig();
+  const musicModel = model || "lyria-002";
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${config.baseUrl}/v1/music/generations`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt, model: musicModel }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return { status: res.status, ok: res.ok };
+  } catch {
+    return { status: 500, ok: false };
+  }
+}
