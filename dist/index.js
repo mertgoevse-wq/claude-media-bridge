@@ -21484,6 +21484,8 @@ var EMPTY_COMPLETION_RESULT = {
 // src/client.ts
 import fs2 from "node:fs";
 import path2 from "node:path";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 
 // src/config.ts
 import fs from "node:fs";
@@ -21528,6 +21530,7 @@ function slugify2(text) {
 }
 
 // src/client.ts
+var execAsync = promisify(exec);
 async function generateImage(options) {
   const config = loadConfig();
   const targetDir = options.outputDir ? resolveUserPath(options.outputDir) : config.defaultOutputDir;
@@ -21581,12 +21584,38 @@ async function generateImage(options) {
       throw new Error("Missing both b64_json and url in image response.");
     }
     const stat = fs2.statSync(filePath);
+    let galleryPath;
+    let openedOnScreen;
+    const shouldSync = options.syncToGallery !== false && fs2.existsSync("/sdcard/Pictures");
+    if (shouldSync) {
+      const targetSdcard = path2.join("/sdcard/Pictures", `${baseName}.jpg`);
+      try {
+        fs2.copyFileSync(filePath, targetSdcard);
+        galleryPath = targetSdcard;
+        const amPath = "/data/data/com.termux/files/usr/bin/am";
+        if (fs2.existsSync(amPath)) {
+          await execAsync(`${amPath} broadcast --user 0 -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetSdcard}"`).catch(() => {});
+        }
+        if (options.openInGallery) {
+          const termuxOpen = "/data/data/com.termux/files/usr/bin/termux-open";
+          if (fs2.existsSync(termuxOpen)) {
+            await execAsync(`${termuxOpen} "${targetSdcard}"`).catch(() => {});
+            openedOnScreen = true;
+          } else if (fs2.existsSync(amPath)) {
+            await execAsync(`${amPath} start --user 0 -a android.intent.action.VIEW -d "file://${targetSdcard}" -t "image/jpeg"`).catch(() => {});
+            openedOnScreen = true;
+          }
+        }
+      } catch {}
+    }
     return {
       filePath,
       fileSizeBytes: stat.size,
       model: config.defaultModel,
       aspectRatio: ratio,
-      revisedPrompt: item.revised_prompt
+      revisedPrompt: item.revised_prompt,
+      galleryPath,
+      openedOnScreen
     };
   } catch (err) {
     clearTimeout(timer);
@@ -21646,11 +21675,29 @@ function createMediaServer() {
     prompt: string2().describe("Detailed description of the image to generate"),
     filename: string2().optional().describe("Desired output filename without extension"),
     output_dir: string2().optional().describe("Directory where the image will be saved (default: ~/media/images)"),
-    aspect_ratio: _enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional().describe("Aspect ratio for the generated image")
-  }, async ({ prompt, filename, output_dir, aspect_ratio }) => {
+    aspect_ratio: _enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional().describe("Aspect ratio for the generated image"),
+    sync_to_gallery: boolean2().optional().describe("Auto-sync image to Android /sdcard/Pictures and trigger media scanner (default: true if available)"),
+    open_in_gallery: boolean2().optional().describe("Open the image in Android Gallery/Viewer on device screen (default: false)")
+  }, async ({ prompt, filename, output_dir, aspect_ratio, sync_to_gallery, open_in_gallery }) => {
     try {
-      const result = await generateImage({ prompt, filename, output_dir, aspect_ratio });
+      const result = await generateImage({
+        prompt,
+        filename,
+        output_dir,
+        aspectRatio: aspect_ratio,
+        syncToGallery: sync_to_gallery,
+        openInGallery: open_in_gallery
+      });
       const sizeKb = (result.fileSizeBytes / 1024).toFixed(1);
+      let extraDetails = "";
+      if (result.galleryPath) {
+        extraDetails += `
+Android Gallery Sync: ${result.galleryPath}`;
+      }
+      if (result.openedOnScreen) {
+        extraDetails += `
+Display Status: Opened on screen in Android Gallery viewer.`;
+      }
       return {
         content: [
           {
@@ -21659,7 +21706,7 @@ function createMediaServer() {
 ${result.filePath}
 
 File Size: ${sizeKb} KB
-Aspect Ratio: ${result.aspectRatio}
+Aspect Ratio: ${result.aspectRatio}${extraDetails}
 The agent can now inspect, transform, or use this file.`
           }
         ]
@@ -21749,7 +21796,8 @@ Die vorhandene AGY-Authentifizierung (Google Cloud Code OAuth) umfasst keine Lyr
                 provider: "antigravity",
                 model: config.defaultModel,
                 alias: "Nano Banana 2",
-                requires_gemini_api_key: false
+                requires_gemini_api_key: false,
+                android_gallery_sync: true
               },
               video_generation: {
                 supported_via_agy: false,

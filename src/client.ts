@@ -1,12 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { loadConfig, resolveUserPath, slugify } from "./config.js";
+
+const execAsync = promisify(exec);
 
 export interface GenerateImageOptions {
   prompt: string;
   filename?: string;
   outputDir?: string;
   aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4";
+  syncToGallery?: boolean;
+  openInGallery?: boolean;
 }
 
 export interface GeneratedImageResult {
@@ -15,6 +21,8 @@ export interface GeneratedImageResult {
   model: string;
   aspectRatio: string;
   revisedPrompt?: string;
+  galleryPath?: string;
+  openedOnScreen?: boolean;
 }
 
 export async function generateImage(
@@ -86,12 +94,51 @@ export async function generateImage(
     }
 
     const stat = fs.statSync(filePath);
+
+    // Android Gallery sync & open integration
+    let galleryPath: string | undefined;
+    let openedOnScreen: boolean | undefined;
+
+    const shouldSync = options.syncToGallery !== false && fs.existsSync("/sdcard/Pictures");
+    if (shouldSync) {
+      const targetSdcard = path.join("/sdcard/Pictures", `${baseName}.jpg`);
+      try {
+        fs.copyFileSync(filePath, targetSdcard);
+        galleryPath = targetSdcard;
+
+        // Trigger Android media scanner
+        const amPath = "/data/data/com.termux/files/usr/bin/am";
+        if (fs.existsSync(amPath)) {
+          await execAsync(
+            `${amPath} broadcast --user 0 -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetSdcard}"`
+          ).catch(() => {});
+        }
+
+        if (options.openInGallery) {
+          const termuxOpen = "/data/data/com.termux/files/usr/bin/termux-open";
+          if (fs.existsSync(termuxOpen)) {
+            await execAsync(`${termuxOpen} "${targetSdcard}"`).catch(() => {});
+            openedOnScreen = true;
+          } else if (fs.existsSync(amPath)) {
+            await execAsync(
+              `${amPath} start --user 0 -a android.intent.action.VIEW -d "file://${targetSdcard}" -t "image/jpeg"`
+            ).catch(() => {});
+            openedOnScreen = true;
+          }
+        }
+      } catch {
+        // Fallback silently if /sdcard permissions are unavailable
+      }
+    }
+
     return {
       filePath,
       fileSizeBytes: stat.size,
       model: config.defaultModel,
       aspectRatio: ratio,
       revisedPrompt: item.revised_prompt,
+      galleryPath,
+      openedOnScreen,
     };
   } catch (err: unknown) {
     clearTimeout(timer);

@@ -18,16 +18,34 @@ export function createMediaServer(): McpServer {
       filename: z.string().optional().describe("Desired output filename without extension"),
       output_dir: z.string().optional().describe("Directory where the image will be saved (default: ~/media/images)"),
       aspect_ratio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional().describe("Aspect ratio for the generated image"),
+      sync_to_gallery: z.boolean().optional().describe("Auto-sync image to Android /sdcard/Pictures and trigger media scanner (default: true if available)"),
+      open_in_gallery: z.boolean().optional().describe("Open the image in Android Gallery/Viewer on device screen (default: false)"),
     },
-    async ({ prompt, filename, output_dir, aspect_ratio }) => {
+    async ({ prompt, filename, output_dir, aspect_ratio, sync_to_gallery, open_in_gallery }) => {
       try {
-        const result = await generateImage({ prompt, filename, output_dir, aspect_ratio });
+        const result = await generateImage({
+          prompt,
+          filename,
+          output_dir,
+          aspectRatio: aspect_ratio,
+          syncToGallery: sync_to_gallery,
+          openInGallery: open_in_gallery,
+        });
         const sizeKb = (result.fileSizeBytes / 1024).toFixed(1);
+
+        let extraDetails = "";
+        if (result.galleryPath) {
+          extraDetails += `\nAndroid Gallery Sync: ${result.galleryPath}`;
+        }
+        if (result.openedOnScreen) {
+          extraDetails += `\nDisplay Status: Opened on screen in Android Gallery viewer.`;
+        }
+
         return {
           content: [
             {
               type: "text",
-              text: `Image successfully generated via Nano Banana (${result.model}) and saved to:\n${result.filePath}\n\nFile Size: ${sizeKb} KB\nAspect Ratio: ${result.aspectRatio}\nThe agent can now inspect, transform, or use this file.`,
+              text: `Image successfully generated via Nano Banana (${result.model}) and saved to:\n${result.filePath}\n\nFile Size: ${sizeKb} KB\nAspect Ratio: ${result.aspectRatio}${extraDetails}\nThe agent can now inspect, transform, or use this file.`,
             },
           ],
         };
@@ -137,6 +155,7 @@ export function createMediaServer(): McpServer {
                     model: config.defaultModel,
                     alias: "Nano Banana 2",
                     requires_gemini_api_key: false,
+                    android_gallery_sync: true,
                   },
                   video_generation: {
                     supported_via_agy: false,
