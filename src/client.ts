@@ -3,29 +3,46 @@ import path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { loadConfig, resolveUserPath, slugify } from "./config.js";
+import {
+  generateImageDirect,
+  type GenerateImageOptions,
+  type GeneratedImageResult,
+} from "./client/agyDirect.js";
+import { loadStoredCredentials } from "./auth/tokenStorage.js";
 
 const execAsync = promisify(exec);
 
-export interface GenerateImageOptions {
-  prompt: string;
-  filename?: string;
-  outputDir?: string;
-  aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4";
-  syncToGallery?: boolean;
-  openInGallery?: boolean;
-}
-
-export interface GeneratedImageResult {
-  filePath: string;
-  fileSizeBytes: number;
-  model: string;
-  aspectRatio: string;
-  revisedPrompt?: string;
-  galleryPath?: string;
-  openedOnScreen?: boolean;
-}
+export type { GenerateImageOptions, GeneratedImageResult };
+export { generateImageDirect };
 
 export async function generateImage(
+  options: GenerateImageOptions
+): Promise<GeneratedImageResult> {
+  // 1. Primary: Direct AGY Google Account authentication
+  const hasEnvToken = Boolean(
+    process.env.AGY_ACCESS_TOKEN || process.env.GOOGLE_ACCESS_TOKEN
+  );
+  const storedCreds = loadStoredCredentials();
+
+  if (hasEnvToken || storedCreds?.accessToken) {
+    return generateImageDirect(options);
+  }
+
+  // 2. Secondary: Fallback to OmniRoute if explicitly configured or available
+  const config = loadConfig();
+  if (config.apiKey) {
+    try {
+      return await generateImageViaOmniRoute(options);
+    } catch {
+      // If OmniRoute fails, fall back to direct AGY error guidance
+    }
+  }
+
+  // 3. Default: Direct AGY (will throw clear guidance to run 'claude-media-bridge login')
+  return generateImageDirect(options);
+}
+
+export async function generateImageViaOmniRoute(
   options: GenerateImageOptions
 ): Promise<GeneratedImageResult> {
   const config = loadConfig();
