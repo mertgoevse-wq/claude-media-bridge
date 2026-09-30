@@ -11,7 +11,7 @@ import {
   getCredentialsPath,
   setCredentialsDirectoryForTesting,
   type StoredCredentials,
-} from "../src/auth/tokenStorage.ts";
+} from "../dist/auth/tokenStorage.js";
 
 describe("Token Storage", () => {
   let tempDir: string;

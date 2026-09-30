@@ -2,11 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { generateImage, probeVideoEndpoint, probeMusicEndpoint } from "./client.js";
 import { loadConfig } from "./config.js";
+import { loadStoredCredentials } from "./auth/tokenStorage.js";
 
 export function createMediaServer(): McpServer {
   const server = new McpServer({
     name: "claude-media-bridge",
-    version: "1.0.0",
+    version: "2.0.0",
   });
 
   // Tool 1: generate_image (Nano Banana / Gemini 3.1 Flash Image via AGY)
@@ -26,7 +27,7 @@ export function createMediaServer(): McpServer {
         const result = await generateImage({
           prompt,
           filename,
-          output_dir,
+          outputDir: output_dir,
           aspectRatio: aspect_ratio,
           syncToGallery: sync_to_gallery,
           openInGallery: open_in_gallery,
@@ -127,8 +128,13 @@ export function createMediaServer(): McpServer {
     {},
     async () => {
       const config = loadConfig();
-      let omniRouteOnline = false;
+      const creds = loadStoredCredentials();
+      const hasEnvToken = Boolean(
+        process.env.AGY_ACCESS_TOKEN || process.env.GOOGLE_ACCESS_TOKEN
+      );
+      const directAgyReady = hasEnvToken || Boolean(creds?.accessToken);
 
+      let omniRouteOnline = false;
       try {
         const res = await fetch(`${config.baseUrl}/v1/models`, {
           headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -138,6 +144,13 @@ export function createMediaServer(): McpServer {
         omniRouteOnline = false;
       }
 
+      const isImageSupported = directAgyReady || omniRouteOnline;
+      const authMode = directAgyReady
+        ? "direct_google_oauth"
+        : omniRouteOnline
+          ? "omniroute_proxy"
+          : "not_authenticated";
+
       return {
         content: [
           {
@@ -145,13 +158,25 @@ export function createMediaServer(): McpServer {
             text: JSON.stringify(
               {
                 bridge: "claude-media-bridge",
-                omniroute_status: omniRouteOnline ? "connected" : "unreachable",
-                omniroute_url: config.baseUrl,
-                authentication_source: "Antigravity/AGY Google OAuth via OmniRoute",
+                version: "2.0.0",
+                auth_mode: authMode,
+                direct_google_oauth: {
+                  authenticated: directAgyReady,
+                  account: creds?.email || (hasEnvToken ? "environment_variable" : null),
+                  project_id:
+                    creds?.projectId ||
+                    process.env.AGY_PROJECT_ID ||
+                    process.env.GOOGLE_CLOUD_PROJECT ||
+                    null,
+                },
+                omniroute_fallback: {
+                  status: omniRouteOnline ? "connected" : "unreachable",
+                  url: config.baseUrl,
+                },
                 capabilities: {
                   image_generation: {
-                    supported: omniRouteOnline,
-                    provider: "antigravity",
+                    supported: isImageSupported,
+                    provider: "Google Antigravity / Cloud Code",
                     model: config.defaultModel,
                     alias: "Nano Banana 2",
                     requires_gemini_api_key: false,

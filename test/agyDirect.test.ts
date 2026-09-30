@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildCloudCodeImagePayload,
   parseCloudCodeImageResponse,
-} from "../src/client/agyDirect.ts";
+} from "../dist/client/agyDirect.js";
 
 describe("Direct AGY Cloud Code Client", () => {
   test("buildCloudCodeImagePayload crafts valid Cloud Code envelope", () => {

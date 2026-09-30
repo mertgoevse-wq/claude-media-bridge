@@ -1,16 +1,17 @@
 {
   "name": "claude-media-bridge",
-  "version": "1.0.0",
-  "description": "Zero-config Media Generation MCP Bridge for Claude Code, Antigravity (AGY) & OmniRoute. Generates high-fidelity images via Google's Nano Banana without requiring separate Gemini API keys.",
+  "version": "2.0.0",
+  "description": "Zero-config Media Generation MCP Bridge for Claude Code & Antigravity (AGY). Direct Google Account OAuth authentication and media generation via Google's Nano Banana 2 (gemini-3.1-flash-image) without external proxy dependencies.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "claude-media-bridge": "bin/cli.mjs"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir ./dist --target node",
+    "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "bun run src/index.ts"
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "dev": "node --experimental-strip-types src/index.ts"
   },
   "keywords": [
     "claude-code",

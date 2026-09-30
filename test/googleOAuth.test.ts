@@ -6,11 +6,11 @@ import os from "node:os";
 import {
   buildAuthorizationUrl,
   getValidAccessToken,
-} from "../src/auth/googleOAuth.ts";
+} from "../dist/auth/googleOAuth.js";
 import {
   setCredentialsDirectoryForTesting,
   saveStoredCredentials,
-} from "../src/auth/tokenStorage.ts";
+} from "../dist/auth/tokenStorage.js";
 
 describe("Google OAuth Core", () => {
   let tempDir: string;

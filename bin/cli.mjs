@@ -1,2 +1,176 @@
 #!/usr/bin/env node
-import "../dist/index.js";
+import { loginInteractive } from "../dist/auth/googleOAuth.js";
+import { loadStoredCredentials, clearStoredCredentials, getCredentialsPath, isTokenExpired } from "../dist/auth/tokenStorage.js";
+import { generateImage } from "../dist/client.js";
+import { loadConfig } from "../dist/config.js";
+
+const args = process.argv.slice(2);
+const command = args[0];
+
+function printHelp() {
+  console.log(`
+Claude Media Bridge - Zero-config Media Generation Bridge
+
+USAGE:
+  claude-media-bridge [command] [options]
+
+COMMANDS:
+  (no args)             Start MCP Server over Stdio (for Claude Code)
+  login                 Interactive Google Account authentication (Antigravity/Cloud Code)
+  status                Check Google OAuth status, project ID and capabilities
+  logout                Remove saved Google credentials
+  generate <prompt>     Generate an image directly via CLI
+  help, --help, -h      Show this help message
+
+OPTIONS for 'generate':
+  --ratio <ratio>       Aspect ratio: 1:1 (default), 16:9, 9:16, 4:3, 3:4
+  --filename <name>     Output filename without extension
+  --out <dir>           Directory to save output (default: ~/media/images)
+  --open                Open generated image in Android Gallery
+
+EXAMPLES:
+  claude-media-bridge login
+  claude-media-bridge status
+  claude-media-bridge generate "A stunning glassmorphism abstract orb" --ratio 16:9
+`);
+}
+
+async function handleStatus() {
+  const creds = loadStoredCredentials();
+  const config = loadConfig();
+  const hasEnvToken = Boolean(process.env.AGY_ACCESS_TOKEN || process.env.GOOGLE_ACCESS_TOKEN);
+
+  console.log("\n=================================================");
+  console.log("   Claude Media Bridge - Status & Capabilities");
+  console.log("=================================================\n");
+
+  console.log("1. Direct Google Account (AGY OAuth):");
+  if (hasEnvToken) {
+    console.log("   Status:     ✔ Authenticated via environment variable");
+    console.log(`   Project ID: ${process.env.AGY_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "(auto-discovery on demand)"}`);
+  } else if (creds && creds.accessToken) {
+    const expired = isTokenExpired(creds.expiryDate);
+    console.log(`   Status:     ✔ Authenticated${expired ? " (Token will auto-refresh on next use)" : " (Active)"}`);
+    console.log(`   Account:    ${creds.email || "(Google Account)"}`);
+    console.log(`   Project ID: ${creds.projectId || "(auto-discovery on demand)"}`);
+    console.log(`   Storage:    ${getCredentialsPath()}`);
+  } else {
+    console.log("   Status:     ✖ Not logged in");
+    console.log("   Action:     Run 'claude-media-bridge login' to connect your Google account.");
+  }
+
+  console.log("\n2. OmniRoute Proxy Fallback:");
+  let omniOnline = false;
+  try {
+    const res = await fetch(`${config.baseUrl}/v1/models`, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    omniOnline = res.ok;
+  } catch {
+    omniOnline = false;
+  }
+  console.log(`   Status:     ${omniOnline ? "✔ Connected" : "○ Unreachable (Optional fallback)"}`);
+  console.log(`   URL:        ${config.baseUrl}`);
+
+  console.log("\n3. Supported Models:");
+  console.log("   • Nano Banana 2 (gemini-3.1-flash-image)  [Image Generation - Supported]");
+  console.log("   • Android Gallery Sync & Media Scanner     [Supported on Android/Termux]");
+  console.log("   • Google Veo Video                        [Requires Paid Gemini API Key]");
+  console.log("   • Google Lyria Music                      [Requires Vertex AI]");
+  console.log();
+}
+
+async function handleGenerate() {
+  const promptIndex = args.findIndex((arg) => !arg.startsWith("-") && arg !== "generate");
+  if (promptIndex === -1) {
+    console.error("Error: Please provide an image prompt. Example: claude-media-bridge generate \"A futuristic city\"");
+    process.exit(1);
+  }
+
+  const prompt = args[promptIndex];
+  let aspectRatio = "1:1";
+  let outputDir;
+  let filename;
+  let openInGallery = false;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--ratio" && args[i + 1]) aspectRatio = args[i + 1];
+    if (args[i] === "--out" && args[i + 1]) outputDir = args[i + 1];
+    if (args[i] === "--filename" && args[i + 1]) filename = args[i + 1];
+    if (args[i] === "--open") openInGallery = true;
+  }
+
+  console.log(`Generating image with Nano Banana 2 (ratio: ${aspectRatio})...`);
+  console.log(`Prompt: "${prompt}"\n`);
+
+  try {
+    const result = await generateImage({
+      prompt,
+      aspectRatio,
+      outputDir,
+      filename,
+      openInGallery,
+    });
+
+    console.log("✔ Image successfully generated!");
+    console.log(`  File:        ${result.filePath}`);
+    console.log(`  Size:        ${(result.fileSizeBytes / 1024).toFixed(1)} KB`);
+    console.log(`  Model:       ${result.model}`);
+    console.log(`  Aspect:      ${result.aspectRatio}`);
+    if (result.galleryPath) {
+      console.log(`  Gallery:     ${result.galleryPath}`);
+    }
+  } catch (err) {
+    console.error(`✖ Generation failed: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+async function main() {
+  if (!command) {
+    // Start MCP Server
+    await import("../dist/index.js");
+    return;
+  }
+
+  switch (command) {
+    case "login":
+      try {
+        await loginInteractive();
+      } catch (err) {
+        console.error(`Login failed: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+
+    case "status":
+      await handleStatus();
+      break;
+
+    case "logout":
+      clearStoredCredentials();
+      console.log("✔ Stored credentials removed successfully.");
+      break;
+
+    case "generate":
+      await handleGenerate();
+      break;
+
+    case "help":
+    case "--help":
+    case "-h":
+      printHelp();
+      break;
+
+    default:
+      console.error(`Unknown command: ${command}`);
+      printHelp();
+      process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});
