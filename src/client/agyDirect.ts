@@ -9,9 +9,9 @@ import {
   DEFAULT_IMAGE_MODEL,
   ANTIGRAVITY_USER_AGENT,
   ANTIGRAVITY_X_GOOG_API_CLIENT,
-} from "../auth/constants.ts";
-import { getValidAccessToken } from "../auth/googleOAuth.ts";
-import { resolveUserPath, slugify } from "../config.ts";
+} from "../auth/constants.js";
+import { getValidAccessToken } from "../auth/googleOAuth.js";
+import { resolveUserPath, slugify } from "../config.js";
 
 const execAsync = promisify(exec);
 

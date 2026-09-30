@@ -10,13 +10,13 @@ import {
   getGoogleOAuthClientSecret,
   ANTIGRAVITY_USER_AGENT,
   ANTIGRAVITY_X_GOOG_API_CLIENT,
-} from "./constants.ts";
+} from "./constants.js";
 import {
   loadStoredCredentials,
   saveStoredCredentials,
   isTokenExpired,
   type StoredCredentials,
-} from "./tokenStorage.ts";
+} from "./tokenStorage.js";
 
 export function buildAuthorizationUrl(redirectUri: string, state: string): string {
   const clientId = getGoogleOAuthClientId();
@@ -282,7 +282,7 @@ export async function loginInteractive(options?: {
     let resolved = false;
 
     // Start local loopback HTTP server
-    const server = http.createServer(async (req, res) => {
+    const server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
       if (!req.url) return;
       const parsedUrl = new URL(req.url, `http://localhost:${port}`);
 
@@ -352,7 +352,7 @@ export async function loginInteractive(options?: {
         output: process.stdout,
       });
 
-      rl.question("\nPaste redirect URL or authorization code (press Enter to skip): ", async (answer) => {
+      rl.question("\nPaste redirect URL or authorization code (press Enter to skip): ", async (answer: string) => {
         rl.close();
         const trimmed = answer.trim();
         if (!trimmed || resolved) return;

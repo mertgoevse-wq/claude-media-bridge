@@ -1,95 +1,90 @@
 <div align="center">
 
-<img src="./assets/logo.jpg" alt="Claude Media Bridge Logo" width="220" style="border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);" />
+<img src="./assets/banner.jpg" alt="Claude Media Bridge Banner" width="100%" style="border-radius: 12px; margin-bottom: 24px;" />
+
+<img src="./assets/logo.jpg" alt="Claude Media Bridge Logo" width="160" style="border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);" />
 
 # Claude Media Bridge
 
-**Zero-config Media Generation MCP Bridge for Claude Code, Antigravity (AGY) & OmniRoute**
+**Zero-config Media Generation MCP Bridge for Claude Code & Antigravity (AGY)**  
+*Authenticate directly with your Google Account. Generate photorealistic images via Google's Nano Banana 2 (`gemini-3.1-flash-image`) — no paid API keys and no external proxy daemons required.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Version: 2.0.0](https://img.shields.io/badge/version-2.0.0-blue.svg)](package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP%20Stdio-D96570.svg)](https://modelcontextprotocol.io)
+[![Backend: Google Cloud Code Direct](https://img.shields.io/badge/Backend-Google%20Cloud%20Code%20Direct-4285F4.svg)](#architecture)
 [![Platform: Linux / Android Termux](https://img.shields.io/badge/Platform-Linux%20%7C%20Android%20Termux-4E86F5.svg)](#requirements)
-[![Protocol: MCP](https://img.shields.io/badge/MCP-Protocol-D96570.svg)](https://modelcontextprotocol.io)
-[![Backend: OmniRoute + AGY](https://img.shields.io/badge/Backend-OmniRoute%20%2B%20AGY-success.svg)](#architecture)
 
 </div>
 
 ---
 
-## Overview
+## ⚡ What is Claude Media Bridge?
 
-`claude-media-bridge` is a Model Context Protocol (MCP) server that empowers **Claude Code** (running with Google's Antigravity `agy/gemini-3.8-flash-high` or any model) to generate photorealistic images via Google's **Nano Banana 2** (`gemini-3.1-flash-image`) — **without requiring a separate Gemini API key**.
+`claude-media-bridge` is a standalone Model Context Protocol (MCP) server that connects **Claude Code** (and any MCP-compliant client) directly to Google's internal **Nano Banana 2 (`gemini-3.1-flash-image`)** engine.
 
-It bridges Claude Code to a local [OmniRoute](https://github.com/danny-avila/LibreChat) instance, leveraging your existing Google Cloud Code / Antigravity OAuth session. Generated media is saved directly to disk as real files, passing the exact file path back to Claude Code for inspection, transformation, and pair-programming workflows.
-
-Built specifically for mobile & workstation environments, including **Debian in Termux (Android PRoot)**, desktop Linux, and server setups. Ready for downstream integration into projects like `claude-code-android`, `droidroute`, and `flylab`.
+### Highlights:
+- **No OmniRoute or Proxy Required:** Functions as a 100% independent, self-contained bridge.
+- **Direct Google Account OAuth:** Run `claude-media-bridge login` to authenticate with your personal Google account. No paid Google AI Studio API key or billing required.
+- **Direct Cloud Code Pipeline:** Communicates straight with Google's Cloud Code APIs (`daily-cloudcode-pa.googleapis.com` / `cloudcode-pa.googleapis.com`).
+- **Real Files on Disk:** Writes full-resolution JPEG/PNG files to `~/media/images/` and returns absolute file paths to Claude Code for immediate inspection, editing, and pair programming.
+- **Android & Termux Ready:** Automatically synchronizes images to Android `/sdcard/Pictures/` and triggers native Android media scanner broadcasts.
+- **Transparent Fallback:** Gracefully supports existing OmniRoute instances or environment tokens if provided.
 
 ---
 
-## Gallery (Generated via AGY & Nano Banana 2)
+## 🎨 Visual Showcase (Generated with Nano Banana 2)
 
-All sample images below were generated in real-time through `claude-media-bridge` using Antigravity OAuth credentials on a Samsung Galaxy A56 (Termux/PRoot):
+All images below were generated live with `claude-media-bridge` using personal Google account authentication:
 
 <div align="center">
 
-| Hamburg Twilight Panorama (4K UHD) | Cybernetic Neon Artifact |
+| **1. Industrial Audio Synthesizer** (16:9) | **2. Arctic Volcanic Coastline** (16:9) |
 | :---: | :---: |
-| <img src="./assets/example-hamburg.jpg" width="440" alt="Hamburg Twilight" /> | <img src="./assets/example-neon-sphere.jpg" width="440" alt="Neon Artifact" /> |
-| *Aspect ratio 16:9 • Elbphilharmonie & Speicherstadt* | *Aspect ratio 1:1 • Photorealistic 8K render* |
+| <img src="./assets/sample-studio.jpg" width="460" alt="Hardware Studio Synthesizer" /> | <img src="./assets/sample-nature.jpg" width="460" alt="Volcanic Beach Coastline" /> |
+| *Brushed aluminum, knurled knobs, OLED waveform display* | *Top-down aerial surf, basalt sand, atmospheric mist* |
+
+| **3. Architectural Glass & Titanium** (1:1) | **4. Artisan Ceramicist Portrait** (4:3) |
+| :---: | :---: |
+| <img src="./assets/sample-glass.jpg" width="460" alt="Fluted Glass & Titanium" /> | <img src="./assets/sample-portrait.jpg" width="460" alt="Ceramicist Portrait" /> |
+| *Macro fluted glass, brushed titanium, natural daylight* | *Natural window light, clay splatters, Kodachrome film tone* |
 
 </div>
 
+> **Anti-AI-Slop Guarantee:** Nano Banana 2 renders authentic physical textures, realistic lighting falloff, and crisp typography without generic neon mush or plastic skin artifacts.
+
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Claude Code CLI / IDE                    │
-│           (e.g., cc-omni --model agy/gemini-3.8)            │
-└──────────────────────────────┬──────────────────────────────┘
-                               │  stdio (MCP)
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     claude-media-bridge                     │
-│               (~/.local/bin/claude-media-bridge)            │
-└──────────────────────────────┬──────────────────────────────┘
-                               │  HTTP /v1/images/generations
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    OmniRoute Local Server                   │
-│                    (http://localhost:20128)                 │
-└──────────────────────────────┬──────────────────────────────┘
-                               │  Google Cloud Code OAuth
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│             Google Antigravity Upstream Backend             │
-│            daily-cloudcode-pa.googleapis.com                │
-│         (Nano Banana 2 / gemini-3.1-flash-image)            │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│               Claude Code / Agent CLI                  │
+└───────────────────────────┬────────────────────────────┘
+                            │ Stdio Transport (MCP)
+┌───────────────────────────▼────────────────────────────┐
+│                  claude-media-bridge                   │
+│                                                        │
+│  ┌─────────────────────────┐  ┌─────────────────────┐  │
+│  │     auth/googleOAuth    │  │   client/agyDirect  │  │
+│  │  • PKCE OAuth Flow      │  │  • Envelope Builder │  │
+│  │  • Loopback / Headless  │  │  • Direct HTTPS API │  │
+│  │  • Token Auto-Refresh   │  │  • Base64 Extractor │  │
+│  │  • Project Bootstrap    │  │  • Gallery Scanner  │  │
+│  └─────────────────────────┘  └─────────────────────┘  │
+└───────────────────────────┬────────────────────────────┘
+                            │ Direct HTTPS Bearer Auth
+┌───────────────────────────▼────────────────────────────┐
+│      Google Cloud Code API (daily-cloudcode-pa / pa)   │
+│                 gemini-3.1-flash-image                 │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Key Features
+## 🚀 Quick Start
 
-- **Zero Gemini API Key Needed**: Uses the active Antigravity/AGY Google OAuth credentials already present in OmniRoute.
-- **Real Files on Disk**: Decodes and writes JPEG/PNG files to `~/media/images/` (or custom directory) and returns absolute file paths, keeping LLM context windows lean.
-- **Full Agent Autonomy**: Claude Code can immediately invoke the `Read` tool on the resulting path to verify or visually analyze the output.
-- **Android / Termux Integration**: Generated media can be synced into internal storage (`/sdcard/Pictures/`) and opened in native Android galleries via intent broadcast.
-- **Fast Standalone Bundle**: Compiled into a lightweight self-contained ESM bundle via `bun build`.
-
----
-
-## Installation & Setup
-
-### 1. Prerequisites
-
-- Node.js (>= 18) or Bun (>= 1.2)
-- An active OmniRoute instance with a configured Antigravity/AGY provider connection (default port `20128`)
-
-### 2. Global Installation
-
-Clone and install into your local share directory:
+### 1. Installation
 
 ```bash
 git clone https://github.com/mertgoevse-wq/claude-media-bridge.git ~/.local/share/claude-media-mcp
@@ -99,58 +94,104 @@ npm run build
 ln -sf ~/.local/share/claude-media-mcp/bin/cli.mjs ~/.local/bin/claude-media-bridge
 ```
 
-### 3. Register as Global Claude Code MCP
+### 2. Authenticate with your Google Account
 
-Add to your global user scope so it is available across all projects:
+Run the interactive login command:
 
 ```bash
-claude mcp add -s user media-bridge -- claude-media-bridge
+claude-media-bridge login
 ```
 
-Verify connection:
+- A browser window will open automatically asking you to log into your Google Account.
+- If you are on a remote/headless server or Termux, simply open the URL shown in your terminal and paste the redirected URL or code back into the prompt.
+
+Verify authentication status:
 
 ```bash
-claude mcp list
+claude-media-bridge status
+```
+
+### 3. Add to Claude Code
+
+Add `claude-media-bridge` to your Claude Code global configuration (`~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "media-bridge": {
+      "command": "claude-media-bridge"
+    }
+  }
+}
+```
+
+Now launch Claude Code. The media tools are automatically available:
+
+```
+> "Generate a photorealistic image of a minimalist mechanical keyboard with warm studio lighting"
 ```
 
 ---
 
-## Available Tools
+## 🛠️ CLI Reference
+
+`claude-media-bridge` includes a rich CLI for standalone testing and account management:
+
+| Command | Description |
+| :--- | :--- |
+| `claude-media-bridge` | Default: starts MCP server over Stdio (for Claude Code). |
+| `claude-media-bridge login` | Start interactive Google OAuth flow. |
+| `claude-media-bridge status` | Check authentication state, Google project ID, and model capabilities. |
+| `claude-media-bridge logout` | Delete stored credentials from `~/.config/claude-media-bridge/`. |
+| `claude-media-bridge generate "<prompt>"` | Generate an image directly from the command line. |
+| `claude-media-bridge help` | Print usage help. |
+
+### CLI Image Generation Options:
+
+```bash
+claude-media-bridge generate "A dramatic Nordic fjord at dusk" \
+  --ratio 16:9 \
+  --filename "fjord" \
+  --out "~/media/images" \
+  --open
+```
+
+- `--ratio`: `1:1` (default), `16:9`, `9:16`, `4:3`, `3:4`
+- `--filename`: Desired output filename (without extension)
+- `--out`: Target directory (defaults to `~/media/images`)
+- `--open`: Open generated image in Android Gallery viewer
+
+---
+
+## 🧩 MCP Tools Reference
+
+When connected to Claude Code, `claude-media-bridge` exposes the following tools:
 
 ### `generate_image`
-
-Generates an image via Nano Banana 2 (`gemini-3.1-flash-image`) and writes it to disk.
-
-| Parameter | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `prompt` | `string` | **Yes** | Detailed image prompt. |
-| `filename` | `string` | No | Base filename (without extension). |
-| `output_dir` | `string` | No | Target folder (defaults to `~/media/images`). |
-| `aspect_ratio` | `enum` | No | `"1:1"`, `"16:9"`, `"9:16"`, `"4:3"`, `"3:4"` (default: `"1:1"`). |
-
-### `generate_video`
-
-Probes video generation capability. Because Google Cloud Code OAuth does not include Veo endpoints, returns an actionable diagnostic explaining requirements for video tasks.
-
-### `generate_music`
-
-Probes music generation capability. Returns a diagnostic explaining Vertex AI / Lyria requirements.
+Generates high-fidelity images via Google's Nano Banana 2 (`gemini-3.1-flash-image`).
+- `prompt` *(string, required)*: Detailed visual description of the image to generate.
+- `filename` *(string, optional)*: Custom filename.
+- `output_dir` *(string, optional)*: Directory where the image will be saved (default: `~/media/images`).
+- `aspect_ratio` *(enum, optional)*: `"1:1"` | `"16:9"` | `"9:16"` | `"4:3"` | `"3:4"`.
+- `sync_to_gallery` *(boolean, optional)*: Auto-sync image to Android `/sdcard/Pictures/` and trigger media scanner (default: `true`).
+- `open_in_gallery` *(boolean, optional)*: Open image in device viewer (default: `false`).
 
 ### `check_media_capabilities`
+Returns a structured JSON summary of current authentication, Google account email, discovered project ID, and model status.
 
-Returns JSON status of the OmniRoute connection, active AGY credentials, and supported media models.
-
----
-
-## Claude Code Slash Command & Skill
-
-A custom skill is available under `~/.claude/skills/media/SKILL.md`. You can trigger media generation via:
-
-- `/media` in chat, or
-- Natural language instructions like: *"Generate a cinematic aerial photo of Hamburg harbor in 16:9"*.
+### `generate_video` & `generate_music`
+Diagnostic capability probes for Google Veo and Google Lyria, with explicit instructions on requirements (Vertex AI / Paid Gemini Studio API).
 
 ---
 
-## License
+## 🔒 Security & Privacy
 
-MIT © [Mert Gövse](https://github.com/mertgoevse-wq)
+- **Safe Credential Storage:** Credentials are saved in `~/.config/claude-media-bridge/credentials.json` with restricted `0600` POSIX file permissions.
+- **Zero Logging of Secrets:** Tokens and client secrets are never printed to terminal transcripts or execution logs.
+- **Local Execution:** Media generation requests go directly from your local machine to Google's Cloud Code API endpoints over TLS.
+
+---
+
+## 📄 License
+
+MIT License © 2026 Mert Gövse. See [LICENSE](LICENSE) for details.
