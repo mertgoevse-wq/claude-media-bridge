@@ -9,6 +9,7 @@ export interface GenerateImageOptions {
 export interface GeneratedImageResult {
     filePath: string;
     fileSizeBytes: number;
+    provider?: string;
     model: string;
     aspectRatio: string;
     revisedPrompt?: string;

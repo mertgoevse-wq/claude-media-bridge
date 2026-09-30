@@ -1,25 +1,29 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { generateImage, probeVideoEndpoint, probeMusicEndpoint } from "./client.js";
+import { generateImage, probeVideoEndpoint, probeMusicEndpoint, listProviders } from "./client.js";
 import { loadConfig } from "./config.js";
 import { loadStoredCredentials } from "./auth/tokenStorage.js";
 export function createMediaServer() {
     const server = new McpServer({
         name: "claude-media-bridge",
-        version: "2.0.0",
+        version: "2.1.0",
     });
-    // Tool 1: generate_image (Nano Banana / Gemini 3.1 Flash Image via AGY)
-    server.tool("generate_image", "Generate high-fidelity images using Google's Nano Banana 2 (gemini-3.1-flash-image) via the Antigravity/AGY OmniRoute bridge. Saves output directly to disk as a real file (.jpg) and returns the file path for inspection and further agentic workflows.", {
+    // Tool 1: generate_image (Multi-Provider Media Generation)
+    server.tool("generate_image", "Generate high-fidelity images via Google's Nano Banana 2 (gemini-3.1-flash-image), OpenAI DALL-E 3, Stability SD3.5, Fal.ai FLUX, or free Pollinations AI. Saves output directly to disk as a real file (.jpg) and returns the file path for inspection and further agentic workflows.", {
         prompt: z.string().describe("Detailed description of the image to generate"),
+        provider: z.string().optional().describe("Optional provider: 'google', 'openai', 'stability', 'fal', 'pollinations', or 'auto' (default: auto)"),
+        model: z.string().optional().describe("Optional specific model name (e.g. 'gemini-3.1-flash-image', 'dall-e-3', 'flux', 'sd3.5')"),
         filename: z.string().optional().describe("Desired output filename without extension"),
         output_dir: z.string().optional().describe("Directory where the image will be saved (default: ~/media/images)"),
         aspect_ratio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional().describe("Aspect ratio for the generated image"),
         sync_to_gallery: z.boolean().optional().describe("Auto-sync image to Android /sdcard/Pictures and trigger media scanner (default: true if available)"),
         open_in_gallery: z.boolean().optional().describe("Open the image in Android Gallery/Viewer on device screen (default: false)"),
-    }, async ({ prompt, filename, output_dir, aspect_ratio, sync_to_gallery, open_in_gallery }) => {
+    }, async ({ prompt, provider, model, filename, output_dir, aspect_ratio, sync_to_gallery, open_in_gallery }) => {
         try {
             const result = await generateImage({
                 prompt,
+                provider,
+                model,
                 filename,
                 outputDir: output_dir,
                 aspectRatio: aspect_ratio,
@@ -38,7 +42,7 @@ export function createMediaServer() {
                 content: [
                     {
                         type: "text",
-                        text: `Image successfully generated via Nano Banana (${result.model}) and saved to:\n${result.filePath}\n\nFile Size: ${sizeKb} KB\nAspect Ratio: ${result.aspectRatio}${extraDetails}\nThe agent can now inspect, transform, or use this file.`,
+                        text: `Image successfully generated via ${result.provider} (${result.model}) and saved to:\n${result.filePath}\n\nFile Size: ${sizeKb} KB\nAspect Ratio: ${result.aspectRatio}${extraDetails}\nThe agent can now inspect, transform, or use this file.`,
                     },
                 ],
             };
@@ -120,13 +124,14 @@ export function createMediaServer() {
             : omniRouteOnline
                 ? "omniroute_proxy"
                 : "not_authenticated";
+        const providers = listProviders();
         return {
             content: [
                 {
                     type: "text",
                     text: JSON.stringify({
                         bridge: "claude-media-bridge",
-                        version: "2.0.0",
+                        version: "2.1.0",
                         auth_mode: authMode,
                         direct_google_oauth: {
                             authenticated: directAgyReady,
@@ -140,13 +145,20 @@ export function createMediaServer() {
                             status: omniRouteOnline ? "connected" : "unreachable",
                             url: config.baseUrl,
                         },
+                        providers: providers.map((p) => ({
+                            id: p.id,
+                            name: p.name,
+                            description: p.description,
+                            default_model: p.defaultModel,
+                            supported_models: p.supportedModels,
+                            requires_api_key: p.requiresApiKey,
+                            configured: p.isConfigured,
+                        })),
                         capabilities: {
                             image_generation: {
-                                supported: isImageSupported,
-                                provider: "Google Antigravity / Cloud Code",
-                                model: config.defaultModel,
-                                alias: "Nano Banana 2",
-                                requires_gemini_api_key: false,
+                                supported: true, // Always true thanks to Pollinations.ai zero-config fallback!
+                                primary_provider: directAgyReady ? "Google Antigravity / Cloud Code" : "Pollinations.ai (Free)",
+                                default_model: directAgyReady ? config.defaultModel : "flux",
                                 android_gallery_sync: true,
                             },
                             video_generation: {

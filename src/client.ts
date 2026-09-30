@@ -8,38 +8,22 @@ import {
   type GenerateImageOptions,
   type GeneratedImageResult,
 } from "./client/agyDirect.js";
-import { loadStoredCredentials } from "./auth/tokenStorage.js";
+import {
+  generateImageWithRouting,
+  listProviders,
+  resolveProvider,
+} from "./providers/router.js";
+import type { ProviderImageOptions } from "./providers/types.js";
 
 const execAsync = promisify(exec);
 
-export type { GenerateImageOptions, GeneratedImageResult };
-export { generateImageDirect };
+export type { GenerateImageOptions, GeneratedImageResult, ProviderImageOptions };
+export { generateImageDirect, generateImageWithRouting, listProviders, resolveProvider };
 
 export async function generateImage(
-  options: GenerateImageOptions
+  options: GenerateImageOptions & { provider?: string; model?: string; apiKey?: string }
 ): Promise<GeneratedImageResult> {
-  // 1. Primary: Direct AGY Google Account authentication
-  const hasEnvToken = Boolean(
-    process.env.AGY_ACCESS_TOKEN || process.env.GOOGLE_ACCESS_TOKEN
-  );
-  const storedCreds = loadStoredCredentials();
-
-  if (hasEnvToken || storedCreds?.accessToken) {
-    return generateImageDirect(options);
-  }
-
-  // 2. Secondary: Fallback to OmniRoute if explicitly configured or available
-  const config = loadConfig();
-  if (config.apiKey) {
-    try {
-      return await generateImageViaOmniRoute(options);
-    } catch {
-      // If OmniRoute fails, fall back to direct AGY error guidance
-    }
-  }
-
-  // 3. Default: Direct AGY (will throw clear guidance to run 'claude-media-bridge login')
-  return generateImageDirect(options);
+  return generateImageWithRouting(options);
 }
 
 export async function generateImageViaOmniRoute(

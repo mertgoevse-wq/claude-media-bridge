@@ -156,6 +156,7 @@ export async function generateImageDirect(options) {
     return {
         filePath,
         fileSizeBytes: stat.size,
+        provider: "google",
         model: DEFAULT_IMAGE_MODEL,
         aspectRatio: options.aspectRatio || "1:1",
         revisedPrompt: parsedResult.revised_prompt,

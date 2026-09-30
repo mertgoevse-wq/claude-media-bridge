@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loginInteractive } from "../dist/auth/googleOAuth.js";
 import { loadStoredCredentials, clearStoredCredentials, getCredentialsPath, isTokenExpired } from "../dist/auth/tokenStorage.js";
-import { generateImage } from "../dist/client.js";
+import { generateImage, listProviders } from "../dist/client.js";
 import { loadConfig } from "../dist/config.js";
 
 const args = process.argv.slice(2);
@@ -18,11 +18,14 @@ COMMANDS:
   (no args)             Start MCP Server over Stdio (for Claude Code)
   login                 Interactive Google Account authentication (Antigravity/Cloud Code)
   status                Check Google OAuth status, project ID and capabilities
+  providers             List all supported media generation providers & models
   logout                Remove saved Google credentials
   generate <prompt>     Generate an image directly via CLI
   help, --help, -h      Show this help message
 
 OPTIONS for 'generate':
+  --provider <name>     Provider: google (default), openai, stability, fal, pollinations
+  --model <name>        Model: gemini-3.1-flash-image, dall-e-3, sd3.5, flux, etc.
   --ratio <ratio>       Aspect ratio: 1:1 (default), 16:9, 9:16, 4:3, 3:4
   --filename <name>     Output filename without extension
   --out <dir>           Directory to save output (default: ~/media/images)
@@ -30,9 +33,30 @@ OPTIONS for 'generate':
 
 EXAMPLES:
   claude-media-bridge login
+  claude-media-bridge providers
   claude-media-bridge status
   claude-media-bridge generate "A stunning glassmorphism abstract orb" --ratio 16:9
+  claude-media-bridge generate "Cyberpunk cityscape" --provider pollinations --model flux
 `);
+}
+
+function handleProviders() {
+  const providers = listProviders();
+  console.log("\n=================================================");
+  console.log("   Claude Media Bridge - Supported Providers");
+  console.log("=================================================\n");
+
+  for (const p of providers) {
+    const status = p.isConfigured
+      ? "\x1b[32m✔ Configured\x1b[0m"
+      : p.requiresApiKey
+        ? "\x1b[33m○ Requires API Key\x1b[0m"
+        : "\x1b[36m✔ Free / Ready\x1b[0m";
+    console.log(`• \x1b[1m${p.name}\x1b[0m [id: ${p.id}] - ${status}`);
+    console.log(`  Description: ${p.description}`);
+    console.log(`  Models:      ${p.supportedModels.join(", ")} (Default: ${p.defaultModel})`);
+    console.log();
+  }
 }
 
 async function handleStatus() {
@@ -90,23 +114,29 @@ async function handleGenerate() {
 
   const prompt = args[promptIndex];
   let aspectRatio = "1:1";
+  let provider;
+  let model;
   let outputDir;
   let filename;
   let openInGallery = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--ratio" && args[i + 1]) aspectRatio = args[i + 1];
+    if (args[i] === "--provider" && args[i + 1]) provider = args[i + 1];
+    if (args[i] === "--model" && args[i + 1]) model = args[i + 1];
     if (args[i] === "--out" && args[i + 1]) outputDir = args[i + 1];
     if (args[i] === "--filename" && args[i + 1]) filename = args[i + 1];
     if (args[i] === "--open") openInGallery = true;
   }
 
-  console.log(`Generating image with Nano Banana 2 (ratio: ${aspectRatio})...`);
+  console.log(`Generating image (provider: ${provider || "auto"}, ratio: ${aspectRatio})...`);
   console.log(`Prompt: "${prompt}"\n`);
 
   try {
     const result = await generateImage({
       prompt,
+      provider,
+      model,
       aspectRatio,
       outputDir,
       filename,
@@ -116,6 +146,7 @@ async function handleGenerate() {
     console.log("✔ Image successfully generated!");
     console.log(`  File:        ${result.filePath}`);
     console.log(`  Size:        ${(result.fileSizeBytes / 1024).toFixed(1)} KB`);
+    console.log(`  Provider:    ${result.provider}`);
     console.log(`  Model:       ${result.model}`);
     console.log(`  Aspect:      ${result.aspectRatio}`);
     if (result.galleryPath) {
@@ -146,6 +177,10 @@ async function main() {
 
     case "status":
       await handleStatus();
+      break;
+
+    case "providers":
+      handleProviders();
       break;
 
     case "logout":
