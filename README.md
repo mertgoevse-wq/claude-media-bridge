@@ -6,13 +6,13 @@
 
 # Claude Media Bridge
 
-**Zero-config Media Generation MCP Bridge for Claude Code & Antigravity (AGY)**  
-*Authenticate directly with your Google Account. Generate photorealistic images via Google's Nano Banana 2 (`gemini-3.1-flash-image`) — no paid API keys and no external proxy daemons required.*
+**Universal Media Generation MCP Bridge for Claude Code, Antigravity & Multi-Provider AI**  
+*Direct Google Account OAuth, zero-key free tiers (Pollinations FLUX), and professional provider routing (OpenAI, Stability, Fal.ai) — built for developers and autonomous agentic workflows.*
 
-[![Version: 2.0.0](https://img.shields.io/badge/version-2.0.0-blue.svg)](package.json)
+[![Version: 2.1.0](https://img.shields.io/badge/version-2.1.0-blue.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP%20Stdio-D96570.svg)](https://modelcontextprotocol.io)
-[![Backend: Google Cloud Code Direct](https://img.shields.io/badge/Backend-Google%20Cloud%20Code%20Direct-4285F4.svg)](#architecture)
+[![Providers: 5 Supported](https://img.shields.io/badge/Providers-Google%20%7C%20OpenAI%20%7C%20Stability%20%7C%20Fal%20%7C%20Pollinations-success.svg)](#supported-providers)
 [![Platform: Linux / Android Termux](https://img.shields.io/badge/Platform-Linux%20%7C%20Android%20Termux-4E86F5.svg)](#requirements)
 
 </div>
@@ -21,19 +21,19 @@
 
 ## ⚡ What is Claude Media Bridge?
 
-`claude-media-bridge` is a standalone Model Context Protocol (MCP) server that connects **Claude Code** (and any MCP-compliant client) directly to Google's internal **Nano Banana 2 (`gemini-3.1-flash-image`)** engine.
+`claude-media-bridge` is a standalone, multi-provider Model Context Protocol (MCP) server that empowers **Claude Code** (and any MCP client) to generate photorealistic images directly into local workspace files — without complex proxies or paid gateways.
 
-### Highlights:
-- **No OmniRoute or Proxy Required:** Functions as a 100% independent, self-contained bridge.
-- **Direct Google Account OAuth:** Run `claude-media-bridge login` to authenticate with your personal Google account. No paid Google AI Studio API key or billing required.
-- **Direct Cloud Code Pipeline:** Communicates straight with Google's Cloud Code APIs (`daily-cloudcode-pa.googleapis.com` / `cloudcode-pa.googleapis.com`).
+### 🌟 Key Highlights:
+- **No External Proxy Required:** Completely decoupled from OmniRoute. Works out-of-the-box as an independent binary.
+- **Direct Google Account OAuth:** Run `claude-media-bridge login` to authenticate with your personal Google account. Generates images via **Google's Nano Banana 2 (`gemini-3.1-flash-image`)** through Cloud Code internal endpoints with zero API fees.
+- **Zero-Key Free Tier (Pollinations FLUX):** If no Google account or API keys are configured, it automatically falls back to **Pollinations.ai (FLUX / Turbo)** for 100% free, instant image generation with zero configuration.
+- **Professional Provider Routing:** Seamlessly supports **OpenAI (DALL-E 3)**, **Stability AI (SD 3.5 / SDXL)**, and **Fal.ai (FLUX.1 Schnell & Dev, Recraft v3)** whenever respective API keys are present.
 - **Real Files on Disk:** Writes full-resolution JPEG/PNG files to `~/media/images/` and returns absolute file paths to Claude Code for immediate inspection, editing, and pair programming.
-- **Android & Termux Ready:** Automatically synchronizes images to Android `/sdcard/Pictures/` and triggers native Android media scanner broadcasts.
-- **Transparent Fallback:** Gracefully supports existing OmniRoute instances or environment tokens if provided.
+- **Android & Termux Integration:** Automatically synchronizes images to Android `/sdcard/Pictures/` and triggers native Android media scanner broadcasts.
 
 ---
 
-## 🎨 Visual Showcase (Generated with Nano Banana 2)
+## 🎨 Visual Showcase (Generated via Nano Banana 2)
 
 All images below were generated live with `claude-media-bridge` using personal Google account authentication:
 
@@ -51,33 +51,55 @@ All images below were generated live with `claude-media-bridge` using personal G
 
 </div>
 
-> **Anti-AI-Slop Guarantee:** Nano Banana 2 renders authentic physical textures, realistic lighting falloff, and crisp typography without generic neon mush or plastic skin artifacts.
+> **Anti-AI-Slop Guarantee:** Clean compositions, authentic physical textures, realistic lighting falloff, and crisp typography without generic neon mush or plastic skin artifacts.
+
+---
+
+## 🔌 Supported Providers
+
+Inspect all available providers anytime with `claude-media-bridge providers`:
+
+| Provider | Default Model | Auth Requirement | Cost |
+| :--- | :--- | :--- | :--- |
+| **Google Antigravity** | `gemini-3.1-flash-image` (Nano Banana 2) | Google Account (`claude-media-bridge login`) | **Free** (No Gemini API key needed) |
+| **Pollinations.ai** | `flux` | None (Zero-config instant fallback) | **100% Free** (No API key needed) |
+| **OpenAI** | `dall-e-3` | `OPENAI_API_KEY` | Paid OpenAI Account |
+| **Stability AI** | `sd3.5` / `sdxl` | `STABILITY_API_KEY` | Paid Stability Account |
+| **Fal.ai** | `flux-schnell` / `recraft-v3` | `FAL_KEY` | Paid Fal Account |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌────────────────────────────────────────────────────────┐
-│               Claude Code / Agent CLI                  │
-└───────────────────────────┬────────────────────────────┘
-                            │ Stdio Transport (MCP)
-┌───────────────────────────▼────────────────────────────┐
-│                  claude-media-bridge                   │
-│                                                        │
-│  ┌─────────────────────────┐  ┌─────────────────────┐  │
-│  │     auth/googleOAuth    │  │   client/agyDirect  │  │
-│  │  • PKCE OAuth Flow      │  │  • Envelope Builder │  │
-│  │  • Loopback / Headless  │  │  • Direct HTTPS API │  │
-│  │  • Token Auto-Refresh   │  │  • Base64 Extractor │  │
-│  │  • Project Bootstrap    │  │  • Gallery Scanner  │  │
-│  └─────────────────────────┘  └─────────────────────┘  │
-└───────────────────────────┬────────────────────────────┘
-                            │ Direct HTTPS Bearer Auth
-┌───────────────────────────▼────────────────────────────┐
-│      Google Cloud Code API (daily-cloudcode-pa / pa)   │
-│                 gemini-3.1-flash-image                 │
-└────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Claude Code / Agent CLI                         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Stdio Transport (MCP)
+┌───────────────────────────────────▼────────────────────────────────────┐
+│                          claude-media-bridge                           │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                    Smart Provider Router                         │  │
+│  │     (Explicit -> Requested Model -> Priority Chain -> Free)      │  │
+│  └──────────────────┬──────────────┬──────────────┬─────────────┬───┘  │
+│                     │              │              │             │      │
+│          ┌──────────▼───┐   ┌──────▼─────┐   ┌────▼─────┐  ┌────▼────┐ │
+│          │    Google    │   │   OpenAI   │   │Stability │  │  Fal.ai │ │
+│          │  Nano Banana │   │  DALL-E 3  │   │  SD 3.5  │  │  FLUX.1 │ │
+│          └──────────┬───┘   └────────────┘   └──────────┘  └─────────┘ │
+│                     │                                                  │
+│                     │ (Zero-Key Instant Fallback)                      │
+│                     ▼                                                  │
+│          ┌──────────────────────────────────────────────────────────┐  │
+│          │         Pollinations.ai (Free FLUX / Turbo)              │  │
+│          └──────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Saves to ~/media/images/
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│             Filesystem + Android Gallery Media Scanner                 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -94,26 +116,23 @@ npm run build
 ln -sf ~/.local/share/claude-media-mcp/bin/cli.mjs ~/.local/bin/claude-media-bridge
 ```
 
-### 2. Authenticate with your Google Account
+### 2. Connect Your Account (Optional but Recommended)
 
-Run the interactive login command:
-
+For Google's Nano Banana 2:
 ```bash
 claude-media-bridge login
 ```
+*(If you skip this step, the bridge automatically uses the free Pollinations FLUX tier!)*
 
-- A browser window will open automatically asking you to log into your Google Account.
-- If you are on a remote/headless server or Termux, simply open the URL shown in your terminal and paste the redirected URL or code back into the prompt.
-
-Verify authentication status:
-
+Check status:
 ```bash
 claude-media-bridge status
+claude-media-bridge providers
 ```
 
 ### 3. Add to Claude Code
 
-Add `claude-media-bridge` to your Claude Code global configuration (`~/.claude.json`):
+Add `claude-media-bridge` to your Claude Code configuration (`~/.claude.json`):
 
 ```json
 {
@@ -125,70 +144,66 @@ Add `claude-media-bridge` to your Claude Code global configuration (`~/.claude.j
 }
 ```
 
-Now launch Claude Code. The media tools are automatically available:
+Now launch Claude Code. The tools are ready:
 
 ```
-> "Generate a photorealistic image of a minimalist mechanical keyboard with warm studio lighting"
+> "Generate a photorealistic studio photo of a sleek obsidian mechanical keyboard with amber backlighting"
 ```
 
 ---
 
 ## 🛠️ CLI Reference
 
-`claude-media-bridge` includes a rich CLI for standalone testing and account management:
+`claude-media-bridge` includes a complete CLI for testing, account management, and automation:
 
 | Command | Description |
 | :--- | :--- |
 | `claude-media-bridge` | Default: starts MCP server over Stdio (for Claude Code). |
 | `claude-media-bridge login` | Start interactive Google OAuth flow. |
-| `claude-media-bridge status` | Check authentication state, Google project ID, and model capabilities. |
+| `claude-media-bridge status` | Check authentication state, Google project ID, and active capabilities. |
+| `claude-media-bridge providers` | List all 5 supported providers and their configuration status. |
 | `claude-media-bridge logout` | Delete stored credentials from `~/.config/claude-media-bridge/`. |
 | `claude-media-bridge generate "<prompt>"` | Generate an image directly from the command line. |
 | `claude-media-bridge help` | Print usage help. |
 
-### CLI Image Generation Options:
+### CLI Image Generation Examples:
 
 ```bash
-claude-media-bridge generate "A dramatic Nordic fjord at dusk" \
-  --ratio 16:9 \
-  --filename "fjord" \
-  --out "~/media/images" \
-  --open
-```
+# Default (auto-routes to Google Nano Banana or Pollinations FLUX)
+claude-media-bridge generate "A dramatic Nordic fjord at dusk" --ratio 16:9
 
-- `--ratio`: `1:1` (default), `16:9`, `9:16`, `4:3`, `3:4`
-- `--filename`: Desired output filename (without extension)
-- `--out`: Target directory (defaults to `~/media/images`)
-- `--open`: Open generated image in Android Gallery viewer
+# Force specific provider or model
+claude-media-bridge generate "Abstract frosted glass monolith" --provider pollinations --ratio 1:1
+claude-media-bridge generate "Cybernetic architectural detail" --provider openai --ratio 1:1
+```
 
 ---
 
 ## 🧩 MCP Tools Reference
 
-When connected to Claude Code, `claude-media-bridge` exposes the following tools:
+When connected to Claude Code, `claude-media-bridge` provides:
 
 ### `generate_image`
-Generates high-fidelity images via Google's Nano Banana 2 (`gemini-3.1-flash-image`).
-- `prompt` *(string, required)*: Detailed visual description of the image to generate.
-- `filename` *(string, optional)*: Custom filename.
-- `output_dir` *(string, optional)*: Directory where the image will be saved (default: `~/media/images`).
+Generates high-fidelity images using the optimal configured provider.
+- `prompt` *(string, required)*: Detailed description of the image.
+- `provider` *(enum, optional)*: `"auto"` | `"google"` | `"pollinations"` | `"openai"` | `"stability"` | `"fal"`.
+- `model` *(string, optional)*: Specific model to request (e.g. `gemini-3.1-flash-image`, `flux`, `dall-e-3`, `sd3.5`).
 - `aspect_ratio` *(enum, optional)*: `"1:1"` | `"16:9"` | `"9:16"` | `"4:3"` | `"3:4"`.
+- `filename` *(string, optional)*: Custom output filename.
+- `output_dir` *(string, optional)*: Directory where the image will be saved (default: `~/media/images`).
 - `sync_to_gallery` *(boolean, optional)*: Auto-sync image to Android `/sdcard/Pictures/` and trigger media scanner (default: `true`).
 - `open_in_gallery` *(boolean, optional)*: Open image in device viewer (default: `false`).
 
 ### `check_media_capabilities`
-Returns a structured JSON summary of current authentication, Google account email, discovered project ID, and model status.
-
-### `generate_video` & `generate_music`
-Diagnostic capability probes for Google Veo and Google Lyria, with explicit instructions on requirements (Vertex AI / Paid Gemini Studio API).
+Returns a structured JSON summary of configured providers, authentication status, and available models.
 
 ---
 
 ## 🔒 Security & Privacy
 
 - **Safe Credential Storage:** Credentials are saved in `~/.config/claude-media-bridge/credentials.json` with restricted `0600` POSIX file permissions.
-- **Zero Logging of Secrets:** Tokens and client secrets are never printed to terminal transcripts or execution logs.
-- **Local Execution:** Media generation requests go directly from your local machine to Google's Cloud Code API endpoints over TLS.
+- **Zero Secret Logging:** Tokens and API keys are never printed to terminal transcripts or execution logs.
+- **Direct Local TLS:** Requests travel directly from your machine to upstream APIs over encrypted TLS.
 
 ---
 

@@ -27,6 +27,7 @@ export interface GenerateImageOptions {
 export interface GeneratedImageResult {
   filePath: string;
   fileSizeBytes: number;
+  provider?: string;
   model: string;
   aspectRatio: string;
   revisedPrompt?: string;
@@ -241,6 +242,7 @@ export async function generateImageDirect(
   return {
     filePath,
     fileSizeBytes: stat.size,
+    provider: "google",
     model: DEFAULT_IMAGE_MODEL,
     aspectRatio: options.aspectRatio || "1:1",
     revisedPrompt: parsedResult.revised_prompt,

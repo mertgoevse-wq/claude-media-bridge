@@ -1,7 +1,7 @@
 {
   "name": "claude-media-bridge",
-  "version": "2.0.0",
-  "description": "Zero-config Media Generation MCP Bridge for Claude Code & Antigravity (AGY). Direct Google Account OAuth authentication and media generation via Google's Nano Banana 2 (gemini-3.1-flash-image) without external proxy dependencies.",
+  "version": "2.1.0",
+  "description": "Universal Media Generation MCP Bridge for Claude Code, Antigravity (AGY) & Multi-Provider AI (Google, OpenAI, Stability, Fal, Pollinations).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
