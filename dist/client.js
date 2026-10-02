@@ -1,27 +1,13 @@
-import fs from "node:fs";
-import path from "node:path";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { loadConfig, resolveUserPath, slugify } from "./config.js";
+import { loadConfig } from "./config.js";
+import { saveImageBuffer } from "./util/saveImage.js";
 import { generateImageDirect, } from "./client/agyDirect.js";
 import { generateImageWithRouting, listProviders, resolveProvider, } from "./providers/router.js";
-const execAsync = promisify(exec);
 export { generateImageDirect, generateImageWithRouting, listProviders, resolveProvider };
 export async function generateImage(options) {
     return generateImageWithRouting(options);
 }
 export async function generateImageViaOmniRoute(options) {
     const config = loadConfig();
-    const targetDir = options.outputDir
-        ? resolveUserPath(options.outputDir)
-        : config.defaultOutputDir;
-    if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-    }
-    const baseName = options.filename
-        ? options.filename.replace(/\.(jpg|jpeg|png|webp)$/i, "")
-        : `${slugify(options.prompt)}-${Date.now()}`;
-    const filePath = path.join(targetDir, `${baseName}.jpg`);
     const requestBody = {
         prompt: options.prompt,
         model: config.defaultModel,
@@ -56,57 +42,27 @@ export async function generateImageViaOmniRoute(options) {
         if (!item) {
             throw new Error("No image data returned from generation endpoint.");
         }
-        if (item.b64_json) {
-            const buffer = Buffer.from(item.b64_json, "base64");
-            fs.writeFileSync(filePath, buffer);
-        }
-        else if (item.url) {
-            const dlRes = await fetch(item.url);
-            const buffer = Buffer.from(await dlRes.arrayBuffer());
-            fs.writeFileSync(filePath, buffer);
-        }
-        else {
+        if (!item.b64_json && !item.url) {
             throw new Error("Missing both b64_json and url in image response.");
         }
-        const stat = fs.statSync(filePath);
-        // Android Gallery sync & open integration
-        let galleryPath;
-        let openedOnScreen;
-        const shouldSync = options.syncToGallery !== false && fs.existsSync("/sdcard/Pictures");
-        if (shouldSync) {
-            const targetSdcard = path.join("/sdcard/Pictures", `${baseName}.jpg`);
-            try {
-                fs.copyFileSync(filePath, targetSdcard);
-                galleryPath = targetSdcard;
-                // Trigger Android media scanner
-                const amPath = "/data/data/com.termux/files/usr/bin/am";
-                if (fs.existsSync(amPath)) {
-                    await execAsync(`${amPath} broadcast --user 0 -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetSdcard}"`).catch(() => { });
-                }
-                if (options.openInGallery) {
-                    const termuxOpen = "/data/data/com.termux/files/usr/bin/termux-open";
-                    if (fs.existsSync(termuxOpen)) {
-                        await execAsync(`${termuxOpen} "${targetSdcard}"`).catch(() => { });
-                        openedOnScreen = true;
-                    }
-                    else if (fs.existsSync(amPath)) {
-                        await execAsync(`${amPath} start --user 0 -a android.intent.action.VIEW -d "file://${targetSdcard}" -t "image/jpeg"`).catch(() => { });
-                        openedOnScreen = true;
-                    }
-                }
-            }
-            catch {
-                // Fallback silently if /sdcard permissions are unavailable
-            }
-        }
+        const buffer = item.b64_json
+            ? Buffer.from(item.b64_json, "base64")
+            : Buffer.from(await (await fetch(item.url)).arrayBuffer());
+        const saved = await saveImageBuffer(buffer, {
+            prompt: options.prompt,
+            filename: options.filename,
+            outputDir: options.outputDir,
+            syncToGallery: options.syncToGallery,
+            openInGallery: options.openInGallery,
+        });
         return {
-            filePath,
-            fileSizeBytes: stat.size,
+            filePath: saved.filePath,
+            fileSizeBytes: saved.fileSizeBytes,
             model: config.defaultModel,
             aspectRatio: ratio,
             revisedPrompt: item.revised_prompt,
-            galleryPath,
-            openedOnScreen,
+            galleryPath: saved.galleryPath,
+            openedOnScreen: saved.openedOnScreen,
         };
     }
     catch (err) {

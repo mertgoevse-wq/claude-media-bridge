@@ -22,6 +22,10 @@ describe("Multi-Provider Architecture", () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.STABILITY_API_KEY;
     delete process.env.FAL_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.HIGGSFIELD_API_KEY;
+    delete process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_PROVIDER;
+    delete process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_MODEL;
     setCredentialsDirectoryForTesting("/tmp/empty-cmb-dir-that-does-not-exist");
   });
 
@@ -80,17 +84,19 @@ describe("Multi-Provider Architecture", () => {
   });
 
   test("resolveProvider resolves by model name", () => {
-    const p1 = resolveProvider(undefined, "dall-e-3");
-    assert.strictEqual(p1.id, "openai");
+    assert.strictEqual(resolveProvider(undefined, "dall-e-3").id, "openai");
+    assert.strictEqual(resolveProvider(undefined, "sd3.5-large").id, "stability");
+    assert.strictEqual(resolveProvider(undefined, "flux-schnell").id, "fal");
+    assert.strictEqual(resolveProvider(undefined, "flux").id, "pollinations");
+    assert.strictEqual(resolveProvider(undefined, "soul-2").id, "higgsfield");
+    assert.strictEqual(resolveProvider(undefined, "gemini-3-pro-image").id, "gemini");
+  });
 
-    const p2 = resolveProvider(undefined, "sd3.5-large");
-    assert.strictEqual(p2.id, "stability");
-
-    const p3 = resolveProvider(undefined, "flux-schnell");
-    assert.strictEqual(p3.id, "fal");
-
-    const p4 = resolveProvider(undefined, "gemini-3.1-flash-image");
-    assert.strictEqual(p4.id, "google");
+  test("resolveProvider accepts provider aliases", () => {
+    assert.strictEqual(resolveProvider("aistudio").id, "gemini");
+    assert.strictEqual(resolveProvider("google-ai-studio").id, "gemini");
+    assert.strictEqual(resolveProvider("stable-diffusion").id, "stability");
+    assert.strictEqual(resolveProvider("dall-e").id, "openai");
   });
 
   test("resolveProvider falls back to Pollinations when no keys are configured", () => {
@@ -98,14 +104,18 @@ describe("Multi-Provider Architecture", () => {
     assert.strictEqual(provider.id, "pollinations");
   });
 
-  test("listProviders returns metadata for all 5 providers", () => {
-    const list = listProviders();
-    assert.strictEqual(list.length, 5);
-    const ids = list.map((p) => p.id);
-    assert.ok(ids.includes("google"));
-    assert.ok(ids.includes("openai"));
-    assert.ok(ids.includes("stability"));
-    assert.ok(ids.includes("fal"));
-    assert.ok(ids.includes("pollinations"));
+  test("listProviders returns metadata for every provider", () => {
+    const ids = listProviders().map((p) => p.id);
+    for (const expected of [
+      "google",
+      "gemini",
+      "pollinations",
+      "fal",
+      "stability",
+      "openai",
+      "higgsfield",
+    ]) {
+      assert.ok(ids.includes(expected), `expected provider '${expected}'`);
+    }
   });
 });

@@ -1,0 +1,29 @@
+{
+  "name": "claude-media-bridge",
+  "owner": {
+    "name": "mertgoevse-wq",
+    "url": "https://github.com/mertgoevse-wq"
+  },
+  "plugins": [
+    {
+      "name": "media-bridge",
+      "source": "./",
+      "description": "Generate images from chat with Nano Banana 2, FLUX, Stable Diffusion and more. One-click Google sign-in.",
+      "version": "2.2.0",
+      "author": {
+        "name": "Mert G\u00f6vse",
+        "url": "https://github.com/mertgoevse-wq"
+      },
+      "homepage": "https://github.com/mertgoevse-wq/claude-media-bridge",
+      "license": "MIT",
+      "keywords": [
+        "image-generation",
+        "nano-banana",
+        "flux",
+        "mcp",
+        "media"
+      ]
+    }
+  ],
+  "description": "Media generation for Claude Code: Nano Banana 2, Google AI Studio, FLUX, Stable Diffusion, DALL-E and Higgsfield."
+}

@@ -1,0 +1,30 @@
+{
+  "name": "media-bridge",
+  "version": "2.2.0",
+  "description": "Generate images from chat with Nano Banana 2, FLUX, Stable Diffusion and more. One-click Google sign-in, free tier available.",
+  "author": {
+    "name": "Mert Gövse",
+    "url": "https://github.com/mertgoevse-wq"
+  },
+  "homepage": "https://github.com/mertgoevse-wq/claude-media-bridge",
+  "repository": "https://github.com/mertgoevse-wq/claude-media-bridge",
+  "license": "MIT",
+  "keywords": ["image-generation", "nano-banana", "gemini", "flux", "mcp", "media"],
+  "userConfig": {
+    "default_provider": {
+      "type": "string",
+      "title": "Default provider",
+      "description": "Which provider to use when the prompt does not name one. Leave empty to auto-pick the best configured one. Options: google, gemini, pollinations, fal, stability, openai, higgsfield"
+    },
+    "default_model": {
+      "type": "string",
+      "title": "Default model",
+      "description": "Model used with the default provider. Nano Banana 2 is gemini-3.1-flash-image, free FLUX is flux, Higgsfield is soul-2."
+    },
+    "output_dir": {
+      "type": "string",
+      "title": "Output directory",
+      "description": "Where generated images are saved. Leave empty for ~/media/images."
+    }
+  }
+}

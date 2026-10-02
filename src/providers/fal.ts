@@ -1,12 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { resolveUserPath, slugify } from "../config.js";
+import { resolveProviderKey } from "../config.js";
+import { saveImageFromUrl } from "../util/saveImage.js";
 import type { MediaProvider, ProviderImageOptions, GeneratedImageResult, AspectRatio } from "./types.js";
-
-const execAsync = promisify(exec);
 
 export function getFalImageSize(aspectRatio?: AspectRatio): string {
   switch (aspectRatio) {
@@ -33,29 +27,16 @@ export const falProvider: MediaProvider = {
   requiresApiKey: true,
 
   isConfigured(): boolean {
-    return Boolean(process.env.FAL_KEY && process.env.FAL_KEY.trim());
+    return Boolean(resolveProviderKey("FAL_KEY"));
   },
 
   async generateImage(options: ProviderImageOptions): Promise<GeneratedImageResult> {
-    const apiKey = options.apiKey || process.env.FAL_KEY;
-    if (!apiKey || !apiKey.trim()) {
+    const apiKey = options.apiKey || resolveProviderKey("FAL_KEY");
+    if (!apiKey) {
       throw new Error(
-        "Fal.ai API key missing. Please set FAL_KEY in your environment or configuration."
+        "No Fal.ai key configured. Run 'claude-media-bridge setup' and choose Fal.ai. Create one at https://fal.ai/dashboard/keys"
       );
     }
-
-    const targetDir = options.outputDir
-      ? resolveUserPath(options.outputDir)
-      : path.join(os.homedir(), "media", "images");
-
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-
-    const baseName = options.filename
-      ? options.filename.replace(/\.(jpg|jpeg|png|webp)$/i, "")
-      : `${slugify(options.prompt)}-${Date.now()}`;
-    const filePath = path.join(targetDir, `${baseName}.jpg`);
 
     const model = options.model || "flux-schnell";
     let endpoint = "https://fal.run/fal-ai/flux/schnell";
@@ -97,52 +78,22 @@ export const falProvider: MediaProvider = {
         throw new Error("No image URL returned from Fal.ai.");
       }
 
-      const dlRes = await fetch(imageUrl);
-      const buffer = Buffer.from(await dlRes.arrayBuffer());
-      fs.writeFileSync(filePath, buffer);
-      const stat = fs.statSync(filePath);
-
-      let galleryPath: string | undefined;
-      let openedOnScreen: boolean | undefined;
-
-      const shouldSync = options.syncToGallery !== false && fs.existsSync("/sdcard/Pictures");
-      if (shouldSync) {
-        const targetSdcard = path.join("/sdcard/Pictures", `${baseName}.jpg`);
-        try {
-          fs.copyFileSync(filePath, targetSdcard);
-          galleryPath = targetSdcard;
-          const amPath = "/data/data/com.termux/files/usr/bin/am";
-          if (fs.existsSync(amPath)) {
-            await execAsync(
-              `${amPath} broadcast --user 0 -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetSdcard}"`
-            ).catch(() => {});
-          }
-
-          if (options.openInGallery) {
-            const termuxOpen = "/data/data/com.termux/files/usr/bin/termux-open";
-            if (fs.existsSync(termuxOpen)) {
-              await execAsync(`${termuxOpen} "${targetSdcard}"`).catch(() => {});
-              openedOnScreen = true;
-            } else if (fs.existsSync(amPath)) {
-              await execAsync(
-                `${amPath} start --user 0 -a android.intent.action.VIEW -d "file://${targetSdcard}" -t "image/jpeg"`
-              ).catch(() => {});
-              openedOnScreen = true;
-            }
-          }
-        } catch {
-          // Ignore Android gallery errors
-        }
-      }
+      const saved = await saveImageFromUrl(imageUrl, {
+        prompt: options.prompt,
+        filename: options.filename,
+        outputDir: options.outputDir,
+        syncToGallery: options.syncToGallery,
+        openInGallery: options.openInGallery,
+      });
 
       return {
-        filePath,
-        fileSizeBytes: stat.size,
+        filePath: saved.filePath,
+        fileSizeBytes: saved.fileSizeBytes,
         provider: "fal",
         model,
         aspectRatio: options.aspectRatio || "1:1",
-        galleryPath,
-        openedOnScreen,
+        galleryPath: saved.galleryPath,
+        openedOnScreen: saved.openedOnScreen,
       };
     } catch (err) {
       clearTimeout(timer);

@@ -1,7 +1,7 @@
 {
   "name": "claude-media-bridge",
-  "version": "2.1.0",
-  "description": "Universal Media Generation MCP Bridge for Claude Code, Antigravity (AGY) & Multi-Provider AI (Google, OpenAI, Stability, Fal, Pollinations).",
+  "version": "2.2.0",
+  "description": "Media generation MCP bridge and Claude Code plugin: Nano Banana 2 via one-click Google sign-in, Google AI Studio, FLUX, Stable Diffusion, DALL-E and Higgsfield.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -11,16 +11,22 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "node --test --experimental-strip-types test/*.test.ts",
-    "dev": "node --experimental-strip-types src/index.ts"
+    "typecheck": "tsc --noEmit",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "screenshots": "python3 scripts/screenshot.py",
+    "setup": "node bin/cli.mjs setup"
   },
   "keywords": [
     "claude-code",
+    "claude-code-plugin",
     "mcp",
-    "antigravity",
-    "agy",
     "omniroute",
     "nano-banana",
     "gemini",
+    "google-ai-studio",
+    "flux",
+    "stable-diffusion",
+    "higgsfield",
     "media-generation",
     "image-generation"
   ],
@@ -39,5 +45,19 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "hooks",
+    ".claude-plugin",
+    ".mcp.json",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ]
 }

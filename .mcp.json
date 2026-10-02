@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "media-bridge": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/cli.mjs", "mcp"],
+      "env": {
+        "NODE_PATH": "${CLAUDE_PLUGIN_DATA}/node_modules"
+      }
+    }
+  }
+}

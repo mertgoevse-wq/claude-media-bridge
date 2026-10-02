@@ -1,6 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { loadBridgeState } from "./auth/tokenStorage.js";
+/**
+ * Values the user set through `/plugin` on the Claude Code plugin. Claude Code
+ * exposes plugin userConfig as CLAUDE_PLUGIN_OPTION_<KEY> in hook and MCP
+ * processes, which is what makes the plugin's config dialog take effect.
+ */
+function pluginOption(key) {
+    const value = process.env[`CLAUDE_PLUGIN_OPTION_${key.toUpperCase()}`];
+    return value?.trim() || undefined;
+}
 export function loadConfig() {
     const envBaseUrl = process.env.OMNIROUTE_BASE_URL ||
         process.env.ANTHROPIC_BASE_URL ||
@@ -28,15 +38,32 @@ export function loadConfig() {
         }
     }
     const cleanBase = envBaseUrl.replace(/\/v1\/?$/, "");
+    const state = loadBridgeState();
     const defaultOutputDir = process.env.MEDIA_OUTPUT_DIR
         ? resolveUserPath(process.env.MEDIA_OUTPUT_DIR)
-        : path.join(os.homedir(), "media", "images");
+        : state?.outputDir
+            ? resolveUserPath(state.outputDir)
+            : pluginOption("output_dir")
+                ? resolveUserPath(pluginOption("output_dir"))
+                : path.join(os.homedir(), "media", "images");
     return {
         baseUrl: cleanBase,
         apiKey,
         defaultOutputDir,
-        defaultModel: "antigravity/gemini-3.1-flash-image",
+        // Explicit setup choices win over the /plugin defaults dialog.
+        defaultModel: state?.defaultModel || pluginOption("default_model") || "gemini-3.1-flash-image",
+        defaultProvider: state?.defaultProvider || pluginOption("default_provider"),
     };
+}
+/**
+ * Resolves a provider API key from the environment first, then from the keys
+ * collected during `claude-media-bridge setup`.
+ */
+export function resolveProviderKey(name) {
+    const fromEnv = process.env[name];
+    if (fromEnv && fromEnv.trim())
+        return fromEnv.trim();
+    return loadBridgeState()?.providerKeys?.[name]?.trim() || undefined;
 }
 export function resolveUserPath(p) {
     if (p === "~" || p.startsWith("~/")) {

@@ -1,12 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { resolveUserPath, slugify } from "../config.js";
+import { resolveProviderKey } from "../config.js";
+import { saveImageBuffer } from "../util/saveImage.js";
 import type { MediaProvider, ProviderImageOptions, GeneratedImageResult } from "./types.js";
-
-const execAsync = promisify(exec);
 
 export const stabilityProvider: MediaProvider = {
   id: "stability",
@@ -17,29 +11,16 @@ export const stabilityProvider: MediaProvider = {
   requiresApiKey: true,
 
   isConfigured(): boolean {
-    return Boolean(process.env.STABILITY_API_KEY && process.env.STABILITY_API_KEY.trim());
+    return Boolean(resolveProviderKey("STABILITY_API_KEY"));
   },
 
   async generateImage(options: ProviderImageOptions): Promise<GeneratedImageResult> {
-    const apiKey = options.apiKey || process.env.STABILITY_API_KEY;
-    if (!apiKey || !apiKey.trim()) {
+    const apiKey = options.apiKey || resolveProviderKey("STABILITY_API_KEY");
+    if (!apiKey) {
       throw new Error(
-        "Stability API key missing. Please set STABILITY_API_KEY in your environment or configuration."
+        "No Stability AI key configured. Run 'claude-media-bridge setup' and choose Stability AI. Create one at https://platform.stability.ai/account/keys"
       );
     }
-
-    const targetDir = options.outputDir
-      ? resolveUserPath(options.outputDir)
-      : path.join(os.homedir(), "media", "images");
-
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-
-    const baseName = options.filename
-      ? options.filename.replace(/\.(jpg|jpeg|png|webp)$/i, "")
-      : `${slugify(options.prompt)}-${Date.now()}`;
-    const filePath = path.join(targetDir, `${baseName}.jpg`);
 
     const model = options.model || "sd3.5";
     const endpoint =
@@ -75,50 +56,22 @@ export const stabilityProvider: MediaProvider = {
       }
 
       const buffer = Buffer.from(await res.arrayBuffer());
-      fs.writeFileSync(filePath, buffer);
-      const stat = fs.statSync(filePath);
-
-      let galleryPath: string | undefined;
-      let openedOnScreen: boolean | undefined;
-
-      const shouldSync = options.syncToGallery !== false && fs.existsSync("/sdcard/Pictures");
-      if (shouldSync) {
-        const targetSdcard = path.join("/sdcard/Pictures", `${baseName}.jpg`);
-        try {
-          fs.copyFileSync(filePath, targetSdcard);
-          galleryPath = targetSdcard;
-          const amPath = "/data/data/com.termux/files/usr/bin/am";
-          if (fs.existsSync(amPath)) {
-            await execAsync(
-              `${amPath} broadcast --user 0 -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetSdcard}"`
-            ).catch(() => {});
-          }
-
-          if (options.openInGallery) {
-            const termuxOpen = "/data/data/com.termux/files/usr/bin/termux-open";
-            if (fs.existsSync(termuxOpen)) {
-              await execAsync(`${termuxOpen} "${targetSdcard}"`).catch(() => {});
-              openedOnScreen = true;
-            } else if (fs.existsSync(amPath)) {
-              await execAsync(
-                `${amPath} start --user 0 -a android.intent.action.VIEW -d "file://${targetSdcard}" -t "image/jpeg"`
-              ).catch(() => {});
-              openedOnScreen = true;
-            }
-          }
-        } catch {
-          // Ignore Android gallery errors
-        }
-      }
+      const saved = await saveImageBuffer(buffer, {
+        prompt: options.prompt,
+        filename: options.filename,
+        outputDir: options.outputDir,
+        syncToGallery: options.syncToGallery,
+        openInGallery: options.openInGallery,
+      });
 
       return {
-        filePath,
-        fileSizeBytes: stat.size,
+        filePath: saved.filePath,
+        fileSizeBytes: saved.fileSizeBytes,
         provider: "stability",
         model,
         aspectRatio: options.aspectRatio || "1:1",
-        galleryPath,
-        openedOnScreen,
+        galleryPath: saved.galleryPath,
+        openedOnScreen: saved.openedOnScreen,
       };
     } catch (err) {
       clearTimeout(timer);

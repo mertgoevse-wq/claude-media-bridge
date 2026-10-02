@@ -1,10 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { resolveUserPath, slugify } from "../config.js";
-const execAsync = promisify(exec);
+import { resolveProviderKey } from "../config.js";
+import { saveImageBuffer } from "../util/saveImage.js";
 export function getOpenAISize(aspectRatio) {
     if (aspectRatio === "16:9")
         return "1792x1024";
@@ -20,23 +15,13 @@ export const openaiProvider = {
     supportedModels: ["dall-e-3", "dall-e-2"],
     requiresApiKey: true,
     isConfigured() {
-        return Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
+        return Boolean(resolveProviderKey("OPENAI_API_KEY"));
     },
     async generateImage(options) {
-        const apiKey = options.apiKey || process.env.OPENAI_API_KEY;
-        if (!apiKey || !apiKey.trim()) {
-            throw new Error("OpenAI API key missing. Please set OPENAI_API_KEY in your environment or configuration.");
+        const apiKey = options.apiKey || resolveProviderKey("OPENAI_API_KEY");
+        if (!apiKey) {
+            throw new Error("No OpenAI API key configured. Run 'claude-media-bridge setup' and choose OpenAI.");
         }
-        const targetDir = options.outputDir
-            ? resolveUserPath(options.outputDir)
-            : path.join(os.homedir(), "media", "images");
-        if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-        }
-        const baseName = options.filename
-            ? options.filename.replace(/\.(jpg|jpeg|png|webp)$/i, "")
-            : `${slugify(options.prompt)}-${Date.now()}`;
-        const filePath = path.join(targetDir, `${baseName}.jpg`);
         const model = options.model || "dall-e-3";
         const size = getOpenAISize(options.aspectRatio);
         const controller = new AbortController();
@@ -66,56 +51,28 @@ export const openaiProvider = {
             if (!item) {
                 throw new Error("No image data returned from OpenAI endpoint.");
             }
-            if (item.b64_json) {
-                const buffer = Buffer.from(item.b64_json, "base64");
-                fs.writeFileSync(filePath, buffer);
-            }
-            else if (item.url) {
-                const dlRes = await fetch(item.url);
-                const buffer = Buffer.from(await dlRes.arrayBuffer());
-                fs.writeFileSync(filePath, buffer);
-            }
-            else {
+            if (!item.b64_json && !item.url) {
                 throw new Error("Missing both b64_json and url in OpenAI response.");
             }
-            const stat = fs.statSync(filePath);
-            let galleryPath;
-            let openedOnScreen;
-            const shouldSync = options.syncToGallery !== false && fs.existsSync("/sdcard/Pictures");
-            if (shouldSync) {
-                const targetSdcard = path.join("/sdcard/Pictures", `${baseName}.jpg`);
-                try {
-                    fs.copyFileSync(filePath, targetSdcard);
-                    galleryPath = targetSdcard;
-                    const amPath = "/data/data/com.termux/files/usr/bin/am";
-                    if (fs.existsSync(amPath)) {
-                        await execAsync(`${amPath} broadcast --user 0 -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetSdcard}"`).catch(() => { });
-                    }
-                    if (options.openInGallery) {
-                        const termuxOpen = "/data/data/com.termux/files/usr/bin/termux-open";
-                        if (fs.existsSync(termuxOpen)) {
-                            await execAsync(`${termuxOpen} "${targetSdcard}"`).catch(() => { });
-                            openedOnScreen = true;
-                        }
-                        else if (fs.existsSync(amPath)) {
-                            await execAsync(`${amPath} start --user 0 -a android.intent.action.VIEW -d "file://${targetSdcard}" -t "image/jpeg"`).catch(() => { });
-                            openedOnScreen = true;
-                        }
-                    }
-                }
-                catch {
-                    // Ignore Android gallery errors
-                }
-            }
+            const buffer = item.b64_json
+                ? Buffer.from(item.b64_json, "base64")
+                : Buffer.from(await (await fetch(item.url)).arrayBuffer());
+            const saved = await saveImageBuffer(buffer, {
+                prompt: options.prompt,
+                filename: options.filename,
+                outputDir: options.outputDir,
+                syncToGallery: options.syncToGallery,
+                openInGallery: options.openInGallery,
+            });
             return {
-                filePath,
-                fileSizeBytes: stat.size,
+                filePath: saved.filePath,
+                fileSizeBytes: saved.fileSizeBytes,
                 provider: "openai",
                 model,
                 aspectRatio: options.aspectRatio || "1:1",
                 revisedPrompt: item.revised_prompt,
-                galleryPath,
-                openedOnScreen,
+                galleryPath: saved.galleryPath,
+                openedOnScreen: saved.openedOnScreen,
             };
         }
         catch (err) {

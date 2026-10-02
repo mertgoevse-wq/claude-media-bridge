@@ -2,12 +2,22 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { generateImage, probeVideoEndpoint, probeMusicEndpoint, listProviders } from "./client.js";
 import { loadConfig } from "./config.js";
-import { loadStoredCredentials } from "./auth/tokenStorage.js";
+import { loadStoredCredentials, loadBridgeState, saveProviderKey } from "./auth/tokenStorage.js";
+import { loginInteractive } from "./auth/googleOAuth.js";
+import { PROVIDER_CATALOG, findCatalogEntry } from "./setup/catalog.js";
+import { registerMcpServer, getUserSettingsPath } from "./setup/claudeCode.js";
+
+/** Kept in sync with package.json. */
+const VERSION = "2.2.0";
+
+function hasGoogleAccount(): boolean {
+  return Boolean(loadStoredCredentials()?.accessToken);
+}
 
 export function createMediaServer(): McpServer {
   const server = new McpServer({
     name: "claude-media-bridge",
-    version: "2.1.0",
+    version: VERSION,
   });
 
   // Tool 1: generate_image (Multi-Provider Media Generation)
@@ -125,7 +135,178 @@ export function createMediaServer(): McpServer {
     }
   );
 
-  // Tool 4: check_media_capabilities
+  // Tool 4: connect_account - sign in or store a key without leaving the chat
+  server.tool(
+    "connect_account",
+    "Connect a media provider. Use provider 'google' for a one-click Google sign-in (Nano Banana 2), or pass an api_key for Google AI Studio, Fal.ai, Stability AI, OpenAI or Higgsfield. Call this before the first generate_image if no provider is set up yet.",
+    {
+      provider: z
+        .string()
+        .optional()
+        .describe("Provider id: google, gemini, pollinations, fal, stability, openai, higgsfield"),
+      api_key: z
+        .string()
+        .optional()
+        .describe("API key to store. Omit for the Google sign-in flow."),
+      port: z.number().optional().describe("Loopback port for the OAuth callback (default 51128)"),
+    },
+    async ({ provider, api_key, port }) => {
+      try {
+        if (!provider) {
+          const catalog = PROVIDER_CATALOG.map(
+            (p) => `${p.id} (${p.auth}, ${p.cost}): ${p.tagline}`
+          ).join("\n");
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Specify a provider to connect.\n\n${catalog}\n\nFor 'google' no key is needed; the browser opens automatically.`,
+              },
+            ],
+          };
+        }
+
+        const entry = findCatalogEntry(provider);
+
+        if (entry?.auth === "oauth") {
+          const creds = await loginInteractive({
+            port,
+            interactive: false,
+            openBrowser: true,
+          });
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Google account connected${creds.email ? ` (${creds.email})` : ""}. Nano Banana 2 is ready. Generate an image with generate_image, or let the user run /claude-media-bridge <prompt>.`,
+              },
+            ],
+          };
+        }
+
+        if (!entry) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Unknown provider '${provider}'. Available: ${PROVIDER_CATALOG.map((p) => p.id).join(", ")}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        if (!api_key) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `${entry.name} needs an API key. Cost: ${entry.costNote}\nCreate one at ${entry.signupUrl} then call connect_account again with api_key set.`,
+              },
+            ],
+          };
+        }
+
+        saveProviderKey(entry.keyName!, api_key);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${entry.name} key saved. The bridge will use ${entry.defaultModel} unless another model is requested.`,
+            },
+          ],
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Could not connect ${provider ?? "provider"}: ${msg}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Tool 5: list_media_models
+  server.tool(
+    "list_media_models",
+    "List every provider and model that can be passed to generate_image, with the current setup state and the real cost of each.",
+    {},
+    async () => {
+      const state = loadBridgeState();
+      const providers = listProviders();
+
+      const lines = providers.map((p) => {
+        const entry = findCatalogEntry(p.id);
+        const cost = entry?.cost ?? "unknown";
+        const ready = p.isConfigured ? "ready" : p.requiresApiKey ? "needs key" : "ready";
+        return [
+          `${p.id} - ${p.name} [${cost}, ${ready}]`,
+          `  default: ${p.defaultModel}`,
+          `  models:  ${p.supportedModels.join(", ")}`,
+          p.isConfigured ? "" : `  note:    ${entry?.costNote ?? ""}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Default provider: ${state?.defaultProvider ?? "auto"}\n\n${lines.join("\n\n")}`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Tool 6: run_setup
+  server.tool(
+    "run_setup",
+    "Run the one-time setup: register the MCP server in Claude Code and report what still needs connecting. Returns a setup URL for the browser-based flow.",
+    {
+      web: z
+        .boolean()
+        .optional()
+        .describe("Print the localhost setup URL the user can open to connect providers with one click"),
+    },
+    async ({ web }) => {
+      try {
+        const result = registerMcpServer();
+
+        const missing = PROVIDER_CATALOG.filter((entry) => {
+          if (entry.auth === "none") return false;
+          if (entry.auth === "oauth") return !hasGoogleAccount();
+          return !loadBridgeState()?.providerKeys?.[entry.keyName!];
+        });
+
+        const lines = [
+          `MCP server: ${result.changed ? `registered (${result.reason})` : "already registered"} in ${result.settingsPath}`,
+          `Google account: ${hasGoogleAccount() ? "connected" : "not connected"}`,
+          missing.length > 0
+            ? `Still to set up:\n${missing.map((m) => `  - ${m.name} (${m.cost}): ${m.costNote}`).join("\n")}`
+            : "All catalogued providers are ready.",
+        ];
+
+        if (web) {
+          lines.push("");
+          lines.push("Run `claude-media-bridge setup --web` for the one-click browser page.");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Setup failed: ${msg}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Tool 7: check_media_capabilities
   server.tool(
     "check_media_capabilities",
     "Inspect current AGY and OmniRoute media capabilities and model availability.",
@@ -164,7 +345,7 @@ export function createMediaServer(): McpServer {
             text: JSON.stringify(
               {
                 bridge: "claude-media-bridge",
-                version: "2.1.0",
+                version: VERSION,
                 auth_mode: authMode,
                 direct_google_oauth: {
                   authenticated: directAgyReady,

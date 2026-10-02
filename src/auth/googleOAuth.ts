@@ -1,6 +1,7 @@
 import http from "node:http";
 import readline from "node:readline";
 import crypto from "node:crypto";
+import { openInBrowser } from "../util/browser.js";
 import {
   GOOGLE_OAUTH_URLS,
   GOOGLE_OAUTH_SCOPES,
@@ -262,141 +263,191 @@ export async function getValidAccessToken(): Promise<{ token: string; projectId:
   return { token, projectId };
 }
 
-export async function loginInteractive(options?: {
+export interface LoginOptions {
   port?: number;
-  manual?: boolean;
-}): Promise<StoredCredentials> {
-  const port = options?.port || DEFAULT_LOOPBACK_PORT;
-  const redirectUri = `http://localhost:${port}/callback`;
-  const state = crypto.randomBytes(16).toString("hex");
-  const authUrl = buildAuthorizationUrl(redirectUri, state);
+  /** Open the consent URL in a browser automatically (default: true). */
+  openBrowser?: boolean;
+  /**
+   * Allow pasting the redirect URL in the terminal. Disable when there is no
+   * TTY, e.g. when login is driven from the MCP server or the web setup UI.
+   */
+  interactive?: boolean;
+  /** Called once the loopback server is listening. */
+  onReady?: (info: { authUrl: string; port: number }) => void;
+}
 
-  console.log("\n=======================================================");
-  console.log("   🔑 Claude Media Bridge - Google Account Login");
-  console.log("=======================================================\n");
-  console.log("1. Open the following URL in your browser:\n");
-  console.log(`\x1b[36m${authUrl}\x1b[0m\n`);
-  console.log("2. Sign in with your Google Account and approve permissions.\n");
+const SUCCESS_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Media Bridge - Signed in</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+         font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         background:#0b1220; color:#e6edf7; }
+  .card { max-width:34rem; padding:2.5rem; text-align:center; }
+  .mark { width:56px; height:56px; margin:0 auto 1.25rem; border-radius:50%;
+          display:grid; place-items:center; background:#0f2a1c; color:#34d399; font-size:1.75rem; }
+  h1 { margin:0 0 .5rem; font-size:1.5rem; letter-spacing:-.02em; }
+  p { margin:0 0 .35rem; color:#9fb0c9; line-height:1.6; }
+  code { color:#cbd5e1; background:#111c2e; padding:.15rem .4rem; border-radius:.35rem; font-size:.9em; }
+</style></head>
+<body><div class="card">
+  <div class="mark">&#10003;</div>
+  <h1>Signed in</h1>
+  <p>Claude Media Bridge is now connected to your Google account.</p>
+  <p>Nano Banana 2 is ready. You can close this tab and return to the terminal.</p>
+  <p style="margin-top:1.25rem;opacity:.6">In chat: <code>/claude-media-bridge nano-banana &lt;your prompt&gt;</code></p>
+</div></body></html>`;
+
+const ERROR_PAGE = (title: string, detail: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Media Bridge - ${title}</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+         font-family: ui-sans-serif, system-ui, sans-serif; background:#0b1220; color:#e6edf7; }
+  .card { max-width:34rem; padding:2.5rem; text-align:center; }
+  h1 { margin:0 0 .75rem; font-size:1.4rem; }
+  p { margin:0; color:#9fb0c9; line-height:1.6; word-break:break-word; }
+</style></head>
+<body><div class="card"><h1>${title}</h1><p>${detail}</p></div></body></html>`;
+
+/** Codes pasted by hand, or full redirect URLs captured on another machine. */
+function extractCode(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed.includes("code=")) return trimmed;
+  try {
+    const url = new URL(trimmed.startsWith("http") ? trimmed : `http://localhost?${trimmed}`);
+    return url.searchParams.get("code") || trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+async function completeLogin(
+  code: string,
+  redirectUri: string
+): Promise<StoredCredentials> {
+  const creds = await exchangeCodeForTokens(code, redirectUri);
+  saveStoredCredentials(creds);
+  return creds;
+}
+
+/**
+ * Runs the Google OAuth loopback flow.
+ *
+ * The server binds to 127.0.0.1 only. When the preferred port is taken it walks
+ * upward rather than failing, because a stale login is a common case on phones.
+ */
+export async function loginInteractive(options: LoginOptions = {}): Promise<StoredCredentials> {
+  const interactive = options.interactive ?? Boolean(process.stdin.isTTY);
+  const openBrowser = options.openBrowser ?? true;
+  const basePort = options.port || DEFAULT_LOOPBACK_PORT;
+  const state = crypto.randomBytes(16).toString("hex");
 
   return new Promise<StoredCredentials>((resolve, reject) => {
-    let resolved = false;
+    let settled = false;
 
-    // Start local loopback HTTP server
-    const server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      server.close();
+      fn();
+    };
+
+    const fail = (err: Error) => finish(() => reject(err));
+
+    const server = http.createServer(async (req, res) => {
       if (!req.url) return;
-      const parsedUrl = new URL(req.url, `http://localhost:${port}`);
+      const url = new URL(req.url, `http://localhost:${basePort}`);
 
-      if (parsedUrl.pathname === "/callback") {
-        const code = parsedUrl.searchParams.get("code");
-        const returnedState = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
+      if (url.pathname === "/callback") {
+        const code = url.searchParams.get("code");
+        const error = url.searchParams.get("error");
 
         if (error) {
           res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<h1>Login Failed</h1><p>Error: ${error}</p>`);
-          if (!resolved) {
-            resolved = true;
-            server.close();
-            reject(new Error(`Google authorization error: ${error}`));
-          }
+          res.end(ERROR_PAGE("Sign-in failed", `Google returned: ${error}`));
+          fail(new Error(`Google authorization error: ${error}`));
           return;
         }
 
-        if (!code || returnedState !== state) {
+        if (!code || url.searchParams.get("state") !== state) {
           res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end("<h1>Invalid Request</h1><p>State mismatch or missing authorization code.</p>");
+          res.end(ERROR_PAGE("Invalid request", "The sign-in request could not be verified. Please try again."));
           return;
         }
 
         try {
-          const creds = await exchangeCodeForTokens(code, redirectUri);
-          saveStoredCredentials(creds);
-
+          const creds = await completeLogin(code, `http://localhost:${actualPort}/callback`);
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`
-            <html>
-              <body style="font-family: system-ui, sans-serif; text-align: center; padding: 40px; background: #0f172a; color: #f8fafc;">
-                <h1 style="color: #38bdf8;">✓ Authentifizierung erfolgreich!</h1>
-                <p>Claude Media Bridge ist jetzt mit deinem Google-Account verbunden.</p>
-                <p style="color: #94a3b8;">Du kannst dieses Fenster schließen und zum Terminal zurückkehren.</p>
-              </body>
-            </html>
-          `);
-
-          if (!resolved) {
-            resolved = true;
-            server.close();
-            console.log("\x1b[32m✔ Authentifizierung erfolgreich abgeschlossen!\x1b[0m");
-            if (creds.email) console.log(`   Account:    ${creds.email}`);
-            if (creds.projectId) console.log(`   Project ID: ${creds.projectId}`);
-            resolve(creds);
-          }
+          res.end(SUCCESS_PAGE);
+          finish(() => resolve(creds));
         } catch (err) {
           res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<h1>Token Exchange Error</h1><p>${err instanceof Error ? err.message : String(err)}</p>`);
-          if (!resolved) {
-            resolved = true;
-            server.close();
-            reject(err);
-          }
+          res.end(ERROR_PAGE("Token exchange failed", String(err instanceof Error ? err.message : err)));
+          fail(err instanceof Error ? err : new Error(String(err)));
         }
+        return;
       }
+
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not found");
     });
 
-    server.listen(port, () => {
-      console.log(`Waiting for browser callback on http://localhost:${port}/callback ...`);
-      console.log("(If you are on a remote/headless machine, you can also paste the full redirect URL below)");
+    let actualPort = basePort;
 
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
+    const tryListen = (port: number, attemptsLeft: number) => {
+      const onError = (err: NodeJS.ErrnoException) => {
+        server.removeListener("error", onError);
+        if (err.code === "EADDRINUSE" && attemptsLeft > 0) {
+          tryListen(port + 1, attemptsLeft - 1);
+          return;
+        }
+        fail(err);
+      };
+      server.once("error", onError);
+
+      server.listen(port, "127.0.0.1", () => {
+        actualPort = port;
+        server.removeListener("error", onError);
+        server.on("error", fail);
+
+        const redirectUri = `http://localhost:${actualPort}/callback`;
+        const authUrl = buildAuthorizationUrl(redirectUri, state);
+
+        console.log(`\n  Listening for the Google callback on http://localhost:${actualPort}/callback\n`);
+        if (openBrowser && openInBrowser(authUrl)) {
+          console.log("  Opened your browser. Approve the request to continue.\n");
+        } else {
+          console.log("  Open this URL in a browser to continue:\n");
+          console.log(`  \x1b[36m${authUrl}\x1b[0m\n`);
+        }
+
+        options.onReady?.({ authUrl, port: actualPort });
+
+        if (!interactive) return;
+
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        rl.question(
+          "  Headless or remote machine? Paste the redirect URL here (Enter to skip): ",
+          async (answer: string) => {
+            rl.close();
+            const trimmed = answer.trim();
+            if (!trimmed || settled) return;
+            try {
+              const creds = await completeLogin(extractCode(trimmed), redirectUri);
+              finish(() => resolve(creds));
+            } catch (err) {
+              fail(err instanceof Error ? err : new Error(String(err)));
+            }
+          }
+        );
       });
+    };
 
-      rl.question("\nPaste redirect URL or authorization code (press Enter to skip): ", async (answer: string) => {
-        rl.close();
-        const trimmed = answer.trim();
-        if (!trimmed || resolved) return;
-
-        let code = trimmed;
-        if (trimmed.includes("code=")) {
-          try {
-            const urlObj = new URL(trimmed.startsWith("http") ? trimmed : `http://localhost?${trimmed}`);
-            code = urlObj.searchParams.get("code") || trimmed;
-          } catch {
-            // Keep code as trimmed
-          }
-        }
-
-        try {
-          const creds = await exchangeCodeForTokens(code, redirectUri);
-          saveStoredCredentials(creds);
-          if (!resolved) {
-            resolved = true;
-            server.close();
-            console.log("\x1b[32m✔ Authentifizierung erfolgreich abgeschlossen!\x1b[0m");
-            if (creds.email) console.log(`   Account:    ${creds.email}`);
-            if (creds.projectId) console.log(`   Project ID: ${creds.projectId}`);
-            resolve(creds);
-          }
-        } catch (err) {
-          if (!resolved) {
-            resolved = true;
-            server.close();
-            reject(err);
-          }
-        }
-      });
-    });
-
-    server.on("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        console.warn(`Port ${port} in use, waiting for manual URL paste...`);
-      } else {
-        if (!resolved) {
-          resolved = true;
-          reject(err);
-        }
-      }
-    });
+    tryListen(basePort, 10);
   });
 }
